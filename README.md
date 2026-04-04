@@ -1,6 +1,6 @@
 # Dockerized Signal Messenger REST API
 
-> **This is a fork of [ghcr.io/strenkml/signal-cli-rest-api](https://github.com/ghcr.io/strenkml/signal-cli-rest-api) with the following additions:**
+> **This is a fork of [bbernhard/signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) with the following additions:**
 > - **PostgreSQL message storage** — received messages are optionally persisted to a PostgreSQL database and can be queried via `GET /v1/messages/{number}`. Enable by setting the `DATABASE_URL` environment variable.
 > - **GitHub Container Registry** — Docker images are published to `ghcr.io/strenkml/signal-cli-rest-api` instead of Docker Hub.
 
