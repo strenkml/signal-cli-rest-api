@@ -2,8 +2,10 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,6 +20,7 @@ import (
 
 	"github.com/bbernhard/signal-cli-rest-api/client"
 	ds "github.com/bbernhard/signal-cli-rest-api/datastructs"
+	"github.com/bbernhard/signal-cli-rest-api/storage"
 	utils "github.com/bbernhard/signal-cli-rest-api/utils"
 )
 
@@ -258,12 +261,88 @@ type ClosePollRequest struct {
 
 type Api struct {
 	signalClient *client.SignalClient
+	store        *storage.Store
 	wsMutex      sync.Mutex
 }
 
-func NewApi(signalClient *client.SignalClient) *Api {
+func NewApi(signalClient *client.SignalClient, store *storage.Store) *Api {
 	return &Api{
 		signalClient: signalClient,
+		store:        store,
+	}
+}
+
+// parseEnvelope extracts key fields from a raw signal-cli envelope JSON object.
+// Unknown or missing fields are silently ignored — the full raw JSON is always stored.
+func parseEnvelope(account string, raw json.RawMessage) (storage.MessageRecord, error) {
+	var wrapper struct {
+		Envelope struct {
+			Source       string `json:"sourceNumber"`
+			SourceName   string `json:"sourceName"`
+			SourceDevice int    `json:"sourceDevice"`
+			Timestamp    int64  `json:"timestamp"`
+			DataMessage  *struct {
+				Message   string `json:"message"`
+				GroupInfo *struct {
+					GroupId string `json:"groupId"`
+				} `json:"groupInfo"`
+			} `json:"dataMessage"`
+			ReceiptMessage *json.RawMessage `json:"receiptMessage"`
+			TypingMessage  *json.RawMessage `json:"typingMessage"`
+			SyncMessage    *json.RawMessage `json:"syncMessage"`
+		} `json:"envelope"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil {
+		return storage.MessageRecord{}, fmt.Errorf("parseEnvelope: %w", err)
+	}
+
+	rec := storage.MessageRecord{
+		Account:      account,
+		Sender:       wrapper.Envelope.Source,
+		SenderName:   wrapper.Envelope.SourceName,
+		SourceDevice: wrapper.Envelope.SourceDevice,
+		Timestamp:    wrapper.Envelope.Timestamp,
+		RawJSON:      raw,
+	}
+
+	switch {
+	case wrapper.Envelope.DataMessage != nil:
+		rec.EnvelopeType = "dataMessage"
+		rec.MessageText = wrapper.Envelope.DataMessage.Message
+		if wrapper.Envelope.DataMessage.GroupInfo != nil {
+			rec.GroupID = wrapper.Envelope.DataMessage.GroupInfo.GroupId
+		}
+	case wrapper.Envelope.ReceiptMessage != nil:
+		rec.EnvelopeType = "receiptMessage"
+	case wrapper.Envelope.TypingMessage != nil:
+		rec.EnvelopeType = "typingMessage"
+	case wrapper.Envelope.SyncMessage != nil:
+		rec.EnvelopeType = "syncMessage"
+	default:
+		rec.EnvelopeType = "unknown"
+	}
+
+	return rec, nil
+}
+
+// persistEnvelopes parses the JSON array produced by client.Receive() and saves
+// each envelope to the store. Errors are logged but never propagated so that
+// storage failures never degrade the existing receive behavior.
+func persistEnvelopes(ctx context.Context, store *storage.Store, account string, jsonStr string) {
+	var rawItems []json.RawMessage
+	if err := json.Unmarshal([]byte(jsonStr), &rawItems); err != nil {
+		log.Warning("Storage: couldn't parse envelope array: ", err)
+		return
+	}
+	for _, raw := range rawItems {
+		rec, err := parseEnvelope(account, raw)
+		if err != nil {
+			log.Warning("Storage: couldn't parse envelope: ", err)
+			continue
+		}
+		if err := store.SaveMessage(ctx, rec); err != nil {
+			log.Error("Storage: couldn't save message: ", err)
+		}
 	}
 }
 
@@ -597,6 +676,14 @@ func (a *Api) handleSignalReceive(ws *websocket.Conn, number string, stop chan s
 					}
 
 					if response.Account == number {
+						if a.store != nil {
+							rec, err := parseEnvelope(number, json.RawMessage(data))
+							if err != nil {
+								log.Warning("Storage: couldn't parse WS message: ", err)
+							} else if err := a.store.SaveMessage(context.Background(), rec); err != nil {
+								log.Error("Storage: couldn't save WS message: ", err)
+							}
+						}
 						a.wsMutex.Lock()
 						err = ws.WriteMessage(websocket.TextMessage, []byte(data))
 						if err != nil {
@@ -755,8 +842,96 @@ func (a *Api) Receive(c *gin.Context) {
 			return
 		}
 
+		if a.store != nil {
+			persistEnvelopes(c.Request.Context(), a.store, number, jsonStr)
+		}
+
 		c.String(200, jsonStr)
 	}
+}
+
+// @Summary Get stored Signal messages.
+// @Tags Messages
+// @Description Returns previously received Signal messages stored in the database.
+// @Description Only available when DATABASE_URL is configured.
+// @Produce  json
+// @Success 200 {array} storage.StoredMessage
+// @Failure 400 {object} Error
+// @Failure 503 {object} Error
+// @Param number path string true "Registered Phone Number"
+// @Param sender query string false "Filter by sender phone number"
+// @Param group_id query string false "Filter by group ID"
+// @Param start_time query integer false "Filter by minimum timestamp (milliseconds since epoch)"
+// @Param end_time query integer false "Filter by maximum timestamp (milliseconds since epoch)"
+// @Param envelope_type query string false "Comma-separated envelope types to include (default: dataMessage)"
+// @Param limit query integer false "Maximum number of results (default: 100, max: 1000)"
+// @Param offset query integer false "Results offset for pagination (default: 0)"
+// @Router /v1/messages/{number} [get]
+func (a *Api) GetMessages(c *gin.Context) {
+	if a.store == nil {
+		c.JSON(503, Error{Msg: "Message storage is not configured (DATABASE_URL not set)"})
+		return
+	}
+
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil || number == "" {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
+
+	filter := storage.QueryFilter{}
+	filter.Sender = c.Query("sender")
+	filter.GroupID = c.Query("group_id")
+
+	if v := c.Query("envelope_type"); v != "" {
+		filter.EnvelopeTypes = strings.Split(v, ",")
+	}
+
+	if v := c.Query("start_time"); v != "" {
+		ts, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			c.JSON(400, Error{Msg: "start_time must be a numeric timestamp in milliseconds"})
+			return
+		}
+		filter.StartTime = &ts
+	}
+	if v := c.Query("end_time"); v != "" {
+		ts, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			c.JSON(400, Error{Msg: "end_time must be a numeric timestamp in milliseconds"})
+			return
+		}
+		filter.EndTime = &ts
+	}
+	if v := c.Query("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			c.JSON(400, Error{Msg: "limit must be a non-negative integer"})
+			return
+		}
+		filter.Limit = n
+	}
+	if v := c.Query("offset"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			c.JSON(400, Error{Msg: "offset must be a non-negative integer"})
+			return
+		}
+		filter.Offset = n
+	}
+
+	messages, err := a.store.GetMessages(c.Request.Context(), number, filter)
+	if err != nil {
+		log.Error("Storage: GetMessages failed: ", err)
+		c.JSON(500, Error{Msg: "Internal error retrieving messages"})
+		return
+	}
+
+	if messages == nil {
+		messages = []storage.StoredMessage{}
+	}
+
+	c.JSON(200, messages)
 }
 
 // @Summary Create a new Signal Group.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"io/ioutil"
@@ -12,6 +13,7 @@ import (
 	"github.com/bbernhard/signal-cli-rest-api/api"
 	"github.com/bbernhard/signal-cli-rest-api/client"
 	docs "github.com/bbernhard/signal-cli-rest-api/docs"
+	"github.com/bbernhard/signal-cli-rest-api/storage"
 	"github.com/bbernhard/signal-cli-rest-api/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
@@ -168,7 +170,18 @@ func main() {
 		log.Fatal("Couldn't init Signal Client: ", err.Error())
 	}
 
-	api := api.NewApi(signalClient)
+	var store *storage.Store
+	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
+		store, err = storage.New(context.Background(), databaseURL)
+		if err != nil {
+			log.Fatal("Couldn't connect to database: ", err.Error())
+		}
+		defer store.Close()
+	} else {
+		log.Info("DATABASE_URL not set — message storage disabled")
+	}
+
+	api := api.NewApi(signalClient, store)
 	v1 := router.Group("/v1")
 	{
 		about := v1.Group("/about")
@@ -208,6 +221,11 @@ func main() {
 		receive := v1.Group("/receive")
 		{
 			receive.GET(":number", api.Receive)
+		}
+
+		messages := v1.Group("/messages")
+		{
+			messages.GET(":number", api.GetMessages)
 		}
 
 		groups := v1.Group("/groups")
