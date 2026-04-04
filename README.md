@@ -1,5 +1,11 @@
 # Dockerized Signal Messenger REST API
 
+> **This is a fork of [ghcr.io/strenkml/signal-cli-rest-api](https://github.com/ghcr.io/strenkml/signal-cli-rest-api) with the following additions:**
+> - **PostgreSQL message storage** — received messages are optionally persisted to a PostgreSQL database and can be queried via `GET /v1/messages/{number}`. Enable by setting the `DATABASE_URL` environment variable.
+> - **GitHub Container Registry** — Docker images are published to `ghcr.io/strenkml/signal-cli-rest-api` instead of Docker Hub.
+
+---
+
 This project creates a small dockerized REST API around [signal-cli](https://github.com/AsamK/signal-cli).
 
 At the moment, the following functionality is exposed via REST:
@@ -14,6 +20,54 @@ At the moment, the following functionality is exposed via REST:
 - Update profile
 
 and [many more](https://bbernhard.github.io/signal-cli-rest-api/)
+
+## Message Storage
+
+When `DATABASE_URL` is set, every received Signal message is automatically persisted to PostgreSQL. The table and indexes are created automatically on startup — no migrations needed.
+
+### Querying stored messages
+
+```
+GET /v1/messages/{number}
+```
+
+| Parameter | Description | Default |
+|---|---|---|
+| `sender` | Filter by sender phone number | — |
+| `group_id` | Filter by group ID | — |
+| `start_time` | Minimum timestamp (ms since epoch) | — |
+| `end_time` | Maximum timestamp (ms since epoch) | — |
+| `envelope_type` | Comma-separated types to include | `dataMessage` |
+| `limit` | Max results (hard cap: 1000) | `100` |
+| `offset` | Pagination offset | `0` |
+
+Returns `503` when `DATABASE_URL` is not set.
+
+### Docker Compose example with storage enabled
+
+```yaml
+services:
+  signal-cli-rest-api:
+    image: ghcr.io/strenkml/signal-cli-rest-api:latest
+    environment:
+      - MODE=normal
+      - DATABASE_URL=postgres://user:password@db:5432/signal
+    ports:
+      - "8080:8080"
+    volumes:
+      - "./signal-cli-config:/home/.local/share/signal-cli"
+
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=signal
+    volumes:
+      - "./postgres-data:/var/lib/postgresql/data"
+```
+
+---
 
 
 ## Getting started
@@ -31,7 +85,7 @@ $ mkdir -p $HOME/.local/share/signal-api
 ```bash
 $ sudo docker run -d --name signal-api --restart=always -p 8080:8080 \
       -v $HOME/.local/share/signal-api:/home/.local/share/signal-cli \
-      -e 'MODE=native' bbernhard/signal-cli-rest-api
+      -e 'MODE=native' ghcr.io/strenkml/signal-cli-rest-api
 ```
 
 3. Register or Link your Signal Number
@@ -73,7 +127,7 @@ The `signal-cli-rest-api` supports three different modes of execution, which can
 ```bash
 $ sudo docker run -d --name signal-api --restart=always -p 9922:8080 \
               -v /home/user/signal-api:/home/.local/share/signal-cli \
-              -e 'MODE=native' bbernhard/signal-cli-rest-api
+              -e 'MODE=native' ghcr.io/strenkml/signal-cli-rest-api
 ```
 
 This launches an instance of the REST service accessible under http://localhost:9922/v2/send. To preserve the Signal number registration, i.e. for updates, the storage location for the `signal-cli` configuration is mapped as Docker Volume into a local `/home/user/signal-api` directory.
@@ -95,7 +149,7 @@ Sample `docker-compose.yml`file:
 version: "3"
 services:
   signal-cli-rest-api:
-    image: bbernhard/signal-cli-rest-api:latest
+    image: ghcr.io/strenkml/signal-cli-rest-api:latest
     environment:
       - MODE=normal #supported modes: json-rpc, native, normal
       #- AUTO_RECEIVE_SCHEDULE=0 22 * * * #enable this parameter on demand (see description below)
@@ -109,7 +163,7 @@ services:
 
 ### API Reference
 
-The Swagger API documentation can be found [here](https://bbernhard.github.io/signal-cli-rest-api/). If you prefer a simple text file based API documentation have a look [here](https://github.com/bbernhard/signal-cli-rest-api/blob/master/doc/EXAMPLES.md).
+The Swagger API documentation can be found [here](https://bbernhard.github.io/signal-cli-rest-api/). If you prefer a simple text file based API documentation have a look [here](https://github.com/ghcr.io/strenkml/signal-cli-rest-api/blob/master/doc/EXAMPLES.md).
 
 ### Blog Posts
 
@@ -130,7 +184,7 @@ In case you need more functionality, please **file a ticket** or **create a PR**
 
 ## Plugins
 
-The plugin mechanism allows to register custom endpoints (with different payloads) without forking the project. Have a look [here](https://github.com/bbernhard/signal-cli-rest-api/tree/master/plugins) for details.
+The plugin mechanism allows to register custom endpoints (with different payloads) without forking the project. Have a look [here](https://github.com/ghcr.io/strenkml/signal-cli-rest-api/tree/master/plugins) for details.
 
 ## Advanced Settings
 There are a bunch of environmental variables that can be set inside the docker container in order to change some technical details. This settings are meant for developers and advanced users. Usually you do *not* need to change anything here - the default values are perfectly fine!
