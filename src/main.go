@@ -2,10 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
-	"io/ioutil"
-	"net/http"
 	"os"
 	"plugin"
 	"strconv"
@@ -16,7 +13,6 @@ import (
 	"github.com/bbernhard/signal-cli-rest-api/storage"
 	"github.com/bbernhard/signal-cli-rest-api/utils"
 	"github.com/gin-gonic/gin"
-	"github.com/robfig/cron/v3"
 	log "github.com/sirupsen/logrus"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -89,9 +85,8 @@ func main() {
 
 	router := gin.New()
 	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
-		SkipPaths: []string{"/v1/health"}, //do not log the health requests (to avoid spamming the log file)
+		SkipPaths: []string{"/v1/health"},
 	}))
-
 	router.Use(gin.Recovery())
 
 	port := utils.GetEnv("PORT", "8080")
@@ -106,66 +101,12 @@ func main() {
 
 	log.Info("Started Signal Messenger REST API")
 
-	supportsSignalCliNative := "0"
-	if _, err := os.Stat("/usr/bin/signal-cli-native"); err == nil {
-		supportsSignalCliNative = "1"
-	}
-
-	err := os.Setenv("SUPPORTS_NATIVE", supportsSignalCliNative)
-	if err != nil {
-		log.Fatal("Couldn't set env variable: ", err.Error())
-	}
-
-	useNative := utils.GetEnv("USE_NATIVE", "")
-	if useNative != "" {
-		log.Warning("The env variable USE_NATIVE is deprecated. Please use the env variable MODE instead")
-	}
-
-	signalCliMode := client.Normal
-	mode := utils.GetEnv("MODE", "normal")
-	if mode == "normal" {
-		signalCliMode = client.Normal
-	} else if mode == "json-rpc" || mode == "json-rpc-native" {
-		signalCliMode = client.JsonRpc
-	} else if mode == "native" {
-		signalCliMode = client.Native
-	}
-
-	if useNative != "" {
-		_, modeEnvVariableSet := os.LookupEnv("MODE")
-		if modeEnvVariableSet {
-			log.Fatal("You have both the USE_NATIVE and the MODE env variable set. Please remove the deprecated env variable USE_NATIVE!")
-		}
-	}
-
-	if useNative == "1" || signalCliMode == client.Native {
-		if supportsSignalCliNative == "0" {
-			log.Error("signal-cli-native is not support on this system...falling back to signal-cli")
-			signalCliMode = client.Normal
-		}
-	}
-
-	if signalCliMode == client.JsonRpc {
-		_, autoReceiveScheduleEnvVariableSet := os.LookupEnv("AUTO_RECEIVE_SCHEDULE")
-		if autoReceiveScheduleEnvVariableSet {
-			log.Fatal("Env variable AUTO_RECEIVE_SCHEDULE can't be used with mode json-rpc")
-		}
-
-		_, signalCliCommandTimeoutEnvVariableSet := os.LookupEnv("SIGNAL_CLI_CMD_TIMEOUT")
-		if signalCliCommandTimeoutEnvVariableSet {
-			log.Fatal("Env variable SIGNAL_CLI_CMD_TIMEOUT can't be used with mode json-rpc")
-		}
-	}
-
 	webhookUrl := utils.GetEnv("RECEIVE_WEBHOOK_URL", "")
-	if webhookUrl != "" && signalCliMode != client.JsonRpc {
-		log.Fatal("Env variable RECEIVE_WEBHOOK_URL can only be used with mode json-rpc!")
-	}
 
-	jsonRpc2ClientConfigPathPath := *signalCliConfig + "/jsonrpc2.yml"
+	jsonRpc2ClientConfigPath := *signalCliConfig + "/jsonrpc2.yml"
 	signalCliApiConfigPath := *signalCliConfig + "/api-config.yml"
-	signalClient := client.NewSignalClient(*signalCliConfig, *attachmentTmpDir, *avatarTmpDir, signalCliMode, jsonRpc2ClientConfigPathPath, signalCliApiConfigPath, webhookUrl)
-	err = signalClient.Init(60)
+	signalClient := client.NewSignalClient(*signalCliConfig, *attachmentTmpDir, *avatarTmpDir, jsonRpc2ClientConfigPath, signalCliApiConfigPath, webhookUrl)
+	err := signalClient.Init(60)
 	if err != nil {
 		log.Fatal("Couldn't init Signal Client: ", err.Error())
 	}
@@ -181,163 +122,107 @@ func main() {
 		log.Info("DATABASE_URL not set — message storage disabled")
 	}
 
-	api := api.NewApi(signalClient, store)
+	a := api.NewApi(signalClient, store)
 	v1 := router.Group("/v1")
 	{
-		about := v1.Group("/about")
+		v1.GET("/about", a.About)
+		v1.GET("/health", a.Health)
+		v1.GET("/configuration", a.GetConfiguration)
+		v1.POST("/configuration", a.SetConfiguration)
+		v1.GET("/accounts", a.GetAccounts)
+		v1.GET("/search", a.SearchForNumbers)
+
+		attachments := v1.Group("/attachments")
 		{
-			about.GET("", api.About)
+			attachments.GET("", a.GetAttachments)
+			attachments.GET("/:id", a.ServeAttachment)
+			attachments.DELETE("/:id", a.RemoveAttachment)
 		}
 
-		configuration := v1.Group("/configuration")
+		accounts := v1.Group("/accounts/:number")
 		{
-			configuration.GET("", api.GetConfiguration)
-			configuration.POST("", api.SetConfiguration)
-			configuration.POST(":number/settings", api.SetTrustMode)
-			configuration.GET(":number/settings", api.GetTrustMode)
-		}
+			// Registration
+			accounts.POST("/register", a.RegisterNumber)
+			accounts.POST("/register/verify/:token", a.VerifyRegisteredNumber)
+			accounts.DELETE("", a.UnregisterNumber)
 
-		health := v1.Group("/health")
-		{
-			health.GET("", api.Health)
-		}
+			// Account settings
+			accounts.PUT("/settings", a.UpdateAccountSettings)
+			accounts.GET("/trust-mode", a.GetTrustMode)
+			accounts.PUT("/trust-mode", a.SetTrustMode)
+			accounts.POST("/rate-limit-challenge", a.SubmitRateLimitChallenge)
+			accounts.POST("/username", a.SetUsername)
+			accounts.DELETE("/username", a.RemoveUsername)
+			accounts.POST("/pin", a.SetPin)
+			accounts.DELETE("/pin", a.RemovePin)
+			accounts.DELETE("/local-data", a.DeleteLocalAccountData)
 
-		register := v1.Group("/register")
-		{
-			register.POST(":number", api.RegisterNumber)
-			register.POST(":number/verify/:token", api.VerifyRegisteredNumber)
-		}
+			// Device linking
+			accounts.GET("/qr-code", a.GetQrCodeLink)
+			accounts.GET("/qr-code/raw", a.GetQrCodeLinkUri)
+			accounts.GET("/devices", a.ListDevices)
+			accounts.POST("/devices", a.AddDevice)
+			accounts.DELETE("/devices/:deviceId", a.RemoveDevice)
 
-		unregister := v1.Group("unregister")
-		{
-			unregister.POST(":number", api.UnregisterNumber)
-		}
+			// Messages
+			accounts.POST("/messages", a.Send)
+			accounts.GET("/messages", a.PollMessages)
+			accounts.GET("/messages/stream", a.StreamMessages)
+			accounts.GET("/messages/history", a.GetMessages)
+			accounts.POST("/messages/remote-delete", a.RemoteDelete)
 
-		sendV1 := v1.Group("/send")
-		{
-			sendV1.POST("", api.Send)
-		}
+			// Reactions & receipts
+			accounts.POST("/reactions", a.SendReaction)
+			accounts.DELETE("/reactions", a.RemoveReaction)
+			accounts.POST("/receipts", a.SendReceipt)
+			accounts.POST("/typing", a.SendStartTyping)
+			accounts.DELETE("/typing", a.SendStopTyping)
 
-		receive := v1.Group("/receive")
-		{
-			receive.GET(":number", api.Receive)
-		}
+			// Groups
+			groups := accounts.Group("/groups")
+			{
+				groups.GET("", a.GetGroups)
+				groups.POST("", a.CreateGroup)
+				groups.GET("/:groupId", a.GetGroup)
+				groups.PUT("/:groupId", a.UpdateGroup)
+				groups.DELETE("/:groupId", a.DeleteGroup)
+				groups.GET("/:groupId/avatar", a.GetGroupAvatar)
+				groups.POST("/:groupId/block", a.BlockGroup)
+				groups.POST("/:groupId/join", a.JoinGroup)
+				groups.POST("/:groupId/quit", a.QuitGroup)
+				groups.POST("/:groupId/members", a.AddMembersToGroup)
+				groups.DELETE("/:groupId/members", a.RemoveMembersFromGroup)
+				groups.POST("/:groupId/admins", a.AddAdminsToGroup)
+				groups.DELETE("/:groupId/admins", a.RemoveAdminsFromGroup)
+				groups.POST("/:groupId/pinned-message", a.PinMessageInGroup)
+				groups.DELETE("/:groupId/pinned-message", a.UnpinMessageInGroup)
+			}
 
-		messages := v1.Group("/messages")
-		{
-			messages.GET(":number", api.GetMessages)
-		}
+			// Contacts
+			contacts := accounts.Group("/contacts")
+			{
+				contacts.GET("", a.ListContacts)
+				contacts.PUT("", a.UpdateContact)
+				contacts.POST("/sync", a.SendContacts)
+				contacts.GET("/:uuid", a.ListContact)
+				contacts.GET("/:uuid/avatar", a.GetProfileAvatar)
+			}
 
-		groups := v1.Group("/groups")
-		{
-			groups.POST(":number", api.CreateGroup)
-			groups.GET(":number", api.GetGroups)
-			groups.GET(":number/:groupid", api.GetGroup)
-			groups.GET(":number/:groupid/avatar", api.GetGroupAvatar)
-			groups.DELETE(":number/:groupid", api.DeleteGroup)
-			groups.POST(":number/:groupid/block", api.BlockGroup)
-			groups.POST(":number/:groupid/join", api.JoinGroup)
-			groups.POST(":number/:groupid/quit", api.QuitGroup)
-			groups.PUT(":number/:groupid", api.UpdateGroup)
-			groups.POST(":number/:groupid/members", api.AddMembersToGroup)
-			groups.DELETE(":number/:groupid/members", api.RemoveMembersFromGroup)
-			groups.POST(":number/:groupid/admins", api.AddAdminsToGroup)
-			groups.DELETE(":number/:groupid/admins", api.RemoveAdminsFromGroup)
-			groups.POST(":number/:groupid/pin-message", api.PinMessageInGroup)
-			groups.DELETE(":number/:groupid/pin-message", api.UnpinMessageInGroup)
-		}
+			// Identities
+			accounts.GET("/identities", a.ListIdentities)
+			accounts.PUT("/identities/:id/trust", a.TrustIdentity)
 
-		link := v1.Group("qrcodelink")
-		{
-			link.GET("", api.GetQrCodeLink)
-			link.GET("/raw", api.GetQrCodeLinkUri)
-		}
+			// Profile
+			accounts.PUT("/profile", a.UpdateProfile)
 
-		accounts := v1.Group("accounts")
-		{
-			accounts.GET("", api.GetAccounts)
-			accounts.POST(":number/rate-limit-challenge", api.SubmitRateLimitChallenge)
-			accounts.PUT(":number/settings", api.UpdateAccountSettings)
-			accounts.POST(":number/username", api.SetUsername)
-			accounts.DELETE(":number/username", api.RemoveUsername)
-			accounts.POST(":number/pin", api.SetPin)
-			accounts.DELETE(":number/pin", api.RemovePin)
-		}
+			// Sticker packs
+			accounts.GET("/sticker-packs", a.ListInstalledStickerPacks)
+			accounts.POST("/sticker-packs", a.AddStickerPack)
 
-		devices := v1.Group("devices")
-		{
-			devices.POST(":number", api.AddDevice)
-			devices.GET(":number", api.ListDevices)
-			devices.DELETE(":number/:deviceId", api.RemoveDevice)
-			devices.DELETE(":number/local-data", api.DeleteLocalAccountData)
-		}
-
-		attachments := v1.Group("attachments")
-		{
-			attachments.GET("", api.GetAttachments)
-			attachments.DELETE(":attachment", api.RemoveAttachment)
-			attachments.GET(":attachment", api.ServeAttachment)
-		}
-
-		stickerPacks := v1.Group("sticker-packs")
-		{
-			stickerPacks.GET(":number", api.ListInstalledStickerPacks)
-			stickerPacks.POST(":number", api.AddStickerPack)
-		}
-
-		profiles := v1.Group("profiles")
-		{
-			profiles.PUT(":number", api.UpdateProfile)
-		}
-
-		identities := v1.Group("identities")
-		{
-			identities.GET(":number", api.ListIdentities)
-			identities.PUT(":number/trust/:numbertotrust", api.TrustIdentity)
-		}
-
-		typingIndicator := v1.Group("typing-indicator")
-		{
-			typingIndicator.PUT(":number", api.SendStartTyping)
-			typingIndicator.DELETE(":number", api.SendStopTyping)
-		}
-
-		remoteDelete := v1.Group("remote-delete")
-		{
-			remoteDelete.DELETE(":number", api.RemoteDelete)
-		}
-
-		reactions := v1.Group("/reactions")
-		{
-			reactions.POST(":number", api.SendReaction)
-			reactions.DELETE(":number", api.RemoveReaction)
-		}
-
-		receipts := v1.Group("/receipts")
-		{
-			receipts.POST(":number", api.SendReceipt)
-		}
-
-		search := v1.Group("/search")
-		{
-			search.GET("", api.SearchForNumbers)
-			search.GET(":number", api.SearchForNumbers)
-		}
-
-		contacts := v1.Group("/contacts")
-		{
-			contacts.GET(":number", api.ListContacts)
-			contacts.PUT(":number", api.UpdateContact)
-			contacts.GET(":number/:uuid", api.ListContact)
-			contacts.GET(":number/:uuid/avatar", api.GetProfileAvatar)
-			contacts.POST(":number/sync", api.SendContacts)
-		}
-
-		polls := v1.Group("/polls")
-		{
-			polls.POST(":number", api.CreatePoll)
-			polls.POST(":number/vote", api.VoteInPoll)
-			polls.DELETE(":number", api.ClosePoll)
+			// Polls
+			accounts.POST("/polls", a.CreatePoll)
+			accounts.POST("/polls/vote", a.VoteInPoll)
+			accounts.DELETE("/polls", a.ClosePoll)
 		}
 
 		if utils.GetEnv("ENABLE_PLUGINS", "false") == "true" {
@@ -380,14 +265,6 @@ func main() {
 		}
 	}
 
-	v2 := router.Group("/v2")
-	{
-		sendV2 := v2.Group("/send")
-		{
-			sendV2.POST("", api.SendV2)
-		}
-	}
-
 	protocol := "http"
 	if utils.GetEnv("SWAGGER_USE_HTTPS_AS_PREFERRED_SCHEME", "false") == "true" {
 		protocol = "https"
@@ -395,94 +272,6 @@ func main() {
 
 	swaggerUrl := ginSwagger.URL(protocol + "://" + swaggerHost + "/swagger/doc.json")
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, swaggerUrl))
-
-	autoReceiveSchedule := utils.GetEnv("AUTO_RECEIVE_SCHEDULE", "")
-	if autoReceiveSchedule != "" {
-		p := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
-		schedule, err := p.Parse(autoReceiveSchedule)
-		if err != nil {
-			log.Fatal("AUTO_RECEIVE_SCHEDULE: Invalid schedule: ", err.Error())
-		}
-
-		type SignalCliAccountConfig struct {
-			Number string `json:"number"`
-		}
-
-		type SignalCliAccountConfigs struct {
-			Accounts []SignalCliAccountConfig `json:"accounts"`
-		}
-
-		autoReceiveScheduleReceiveTimeout := utils.GetEnv("AUTO_RECEIVE_SCHEDULE_RECEIVE_TIMEOUT", "10")
-		autoReceiveScheduleIgnoreAttachments := utils.GetEnv("AUTO_RECEIVE_SCHEDULE_IGNORE_ATTACHMENTS", "false")
-		autoReceiveScheduleIgnoreStories := utils.GetEnv("AUTO_RECEIVE_SCHEDULE_IGNORE_STORIES", "false")
-		autoReceiveScheduleIgnoreAvatars := utils.GetEnv("AUTO_RECEIVE_SCHEDULE_IGNORE_AVATARS", "false")
-		autoReceiveScheduleIgnoreStickers := utils.GetEnv("AUTO_RECEIVE_SCHEDULE_IGNORE_STICKERS", "false")
-		autoReceiveScheduleSendReadReceipts := utils.GetEnv("AUTO_RECEIVE_SCHEDULE_SEND_READ_RECEIPTS", "false")
-
-		c := cron.New()
-		c.Schedule(schedule, cron.FuncJob(func() {
-			accountsJsonPath := *signalCliConfig + "/data/accounts.json"
-			if _, err := os.Stat(accountsJsonPath); err == nil {
-				signalCliConfigJsonData, err := ioutil.ReadFile(accountsJsonPath)
-				if err != nil {
-					log.Fatal("AUTO_RECEIVE_SCHEDULE: Couldn't read accounts.json: ", err.Error())
-				}
-				var signalCliAccountConfigs SignalCliAccountConfigs
-				err = json.Unmarshal(signalCliConfigJsonData, &signalCliAccountConfigs)
-				if err != nil {
-					log.Fatal("AUTO_RECEIVE_SCHEDULE: Couldn't parse accounts.json: ", err.Error())
-				}
-
-				for _, account := range signalCliAccountConfigs.Accounts {
-					client := &http.Client{}
-
-					log.Debug("AUTO_RECEIVE_SCHEDULE: Calling receive for number ", account.Number)
-					req, err := http.NewRequest("GET", "http://127.0.0.1:"+port+"/v1/receive/"+account.Number, nil)
-					if err != nil {
-						log.Error("AUTO_RECEIVE_SCHEDULE: Couldn't call receive for number ", account.Number, ": ", err.Error())
-					}
-
-					q := req.URL.Query()
-					q.Add("timeout", autoReceiveScheduleReceiveTimeout)
-					q.Add("ignore_attachments", autoReceiveScheduleIgnoreAttachments)
-					q.Add("ignore_stories", autoReceiveScheduleIgnoreStories)
-					q.Add("ignore_avatars", autoReceiveScheduleIgnoreAvatars)
-					q.Add("ignore_stickers", autoReceiveScheduleIgnoreStickers)
-					q.Add("send_read_receipts", autoReceiveScheduleSendReadReceipts)
-					req.URL.RawQuery = q.Encode()
-
-					resp, err := client.Do(req)
-					if err != nil {
-						log.Error("AUTO_RECEIVE_SCHEDULE: Couldn't call receive for number ", account.Number, ": ", err.Error())
-					}
-
-					if resp.StatusCode != 200 {
-						jsonResp, err := ioutil.ReadAll(resp.Body)
-						resp.Body.Close()
-						if err != nil {
-							log.Error("AUTO_RECEIVE_SCHEDULE: Couldn't read json response: ", err.Error())
-							continue
-						}
-
-						type ReceiveResponse struct {
-							Error string `json:"error"`
-						}
-						var receiveResponse ReceiveResponse
-						err = json.Unmarshal(jsonResp, &receiveResponse)
-						if err != nil {
-							log.Error("AUTO_RECEIVE_SCHEDULE: Couldn't parse json response: ", err.Error())
-							continue
-						}
-
-						log.Error("AUTO_RECEIVE_SCHEDULE: Couldn't call receive for number ", account.Number, ": ", receiveResponse)
-					}
-				}
-			} else {
-				log.Info("AUTO_RECEIVE_SCHEDULE: accounts.json doesn't exist")
-			}
-		}))
-		c.Start()
-	}
 
 	router.Run()
 }

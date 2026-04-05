@@ -65,6 +65,11 @@ type JsonRpc2Client struct {
 	receivedMessagesMutex    sync.Mutex
 	receivedResponsesMutex   sync.Mutex
 	address                  string
+	onReceive                func(number string, msg JsonRpc2ReceivedMessage)
+}
+
+func (r *JsonRpc2Client) SetOnReceiveCallback(fn func(number string, msg JsonRpc2ReceivedMessage)) {
+	r.onReceive = fn
 }
 
 func NewJsonRpc2Client(signalCliApiConfig *utils.SignalCliApiConfig, number string) *JsonRpc2Client {
@@ -253,6 +258,10 @@ func (r *JsonRpc2Client) ReceiveData(number string, receiveWebhookUrl string) {
 				if err != nil {
 					log.Error("Couldn't post data to webhook: ", err)
 				}
+			}
+
+			if r.onReceive != nil {
+				r.onReceive(number, resp1)
 			}
 		}
 

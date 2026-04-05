@@ -26,16 +26,9 @@ EOF
 cap_prefix="-cap_"
 caps="$cap_prefix$(seq -s ",$cap_prefix" 0 $(cat /proc/sys/kernel/cap_last_cap))"
 
-# TODO: check mode
-if [ "$MODE" = "json-rpc" ] || [ "$MODE" = "json-rpc-native" ]
-then
 /usr/bin/jsonrpc2-helper
-if [ -n "$JAVA_OPTS" ] ; then
-    echo "export JAVA_OPTS='$JAVA_OPTS'" >> /etc/default/supervisor
-fi
 service supervisor start
 supervisorctl start all
-fi
 
 export HOST_IP=$(hostname -I | awk '{print $1}')
 

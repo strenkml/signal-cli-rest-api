@@ -14,8 +14,10 @@ CREATE TABLE IF NOT EXISTS signal_messages (
     group_id        TEXT,
     envelope_type   TEXT        NOT NULL,
     raw_json        JSONB       NOT NULL,
-    received_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    received_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    retrieved       BOOLEAN     NOT NULL DEFAULT FALSE
 );
+ALTER TABLE signal_messages ADD COLUMN IF NOT EXISTS retrieved BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_signal_messages_account
     ON signal_messages (account);
 CREATE INDEX IF NOT EXISTS idx_signal_messages_sender
@@ -28,6 +30,8 @@ CREATE INDEX IF NOT EXISTS idx_signal_messages_account_timestamp
     ON signal_messages (account, timestamp);
 CREATE INDEX IF NOT EXISTS idx_signal_messages_raw_json
     ON signal_messages USING GIN (raw_json);
+CREATE INDEX IF NOT EXISTS idx_signal_messages_retrieved
+    ON signal_messages (account, retrieved);
 `
 
 func (s *Store) createSchema(ctx context.Context) error {

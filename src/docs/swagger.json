@@ -61,80 +61,9 @@
                 }
             }
         },
-        "/v1/accounts/{number}/pin": {
-            "post": {
-                "description": "Sets a new Signal Pin",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Accounts"
-                ],
-                "summary": "Set Pin",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Registered Phone Number",
-                        "name": "number",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Request",
-                        "name": "data",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.SetPinRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            },
+        "/v1/accounts/{number}": {
             "delete": {
-                "description": "Removes a Signal Pin",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Accounts"
-                ],
-                "summary": "Remove Pin",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Registered Phone Number",
-                        "name": "number",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/accounts/{number}/rate-limit-challenge": {
-            "post": {
-                "description": "When running into rate limits, sometimes the limit can be lifted, by solving a CAPTCHA. To get the captcha token, go to https://signalcaptchas.org/challenge/generate.html For the staging environment, use: https://signalcaptchas.org/staging/registration/generate.html. The \"challenge_token\" is the token from the failed send attempt. The \"captcha\" is the captcha result, starting with signalcaptcha://",
+                "description": "Disables push support for this device. **WARNING:** If *delete_account* is set to *true*, the account will be deleted from the Signal Server. This cannot be undone without loss.",
                 "consumes": [
                     "application/json"
                 ],
@@ -142,9 +71,9 @@
                     "application/json"
                 ],
                 "tags": [
-                    "Accounts"
+                    "Devices"
                 ],
-                "summary": "Lift rate limit restrictions by solving a captcha.",
+                "summary": "Unregister a phone number.",
                 "parameters": [
                     {
                         "type": "string",
@@ -154,12 +83,11 @@
                         "required": true
                     },
                     {
-                        "description": "Request",
+                        "description": "Additional Settings",
                         "name": "data",
                         "in": "body",
-                        "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.RateLimitChallengeRequest"
+                            "$ref": "#/definitions/api.UnregisterNumberRequest"
                         }
                     }
                 ],
@@ -176,384 +104,7 @@
                 }
             }
         },
-        "/v1/accounts/{number}/settings": {
-            "put": {
-                "description": "Update the account attributes on the signal server.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Accounts"
-                ],
-                "summary": "Update the account settings.",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Registered Phone Number",
-                        "name": "number",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Request",
-                        "name": "data",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.UpdateAccountSettingsRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/accounts/{number}/username": {
-            "post": {
-                "description": "Allows to set the username that should be used for this account. This can either be just the nickname (e.g. test) or the complete username with discriminator (e.g. test.123). Returns the new username with discriminator and the username link.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Accounts"
-                ],
-                "summary": "Set a username.",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Registered Phone Number",
-                        "name": "number",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Request",
-                        "name": "data",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.SetUsernameRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/client.SetUsernameResponse"
-                        }
-                    },
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Delete the username associated with this account.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Accounts"
-                ],
-                "summary": "Remove a username.",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Registered Phone Number",
-                        "name": "number",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/attachments": {
-            "get": {
-                "description": "List all downloaded attachments",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Attachments"
-                ],
-                "summary": "List all attachments.",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/attachments/{attachment}": {
-            "get": {
-                "description": "Serve the attachment with the given id",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Attachments"
-                ],
-                "summary": "Serve Attachment.",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Attachment ID",
-                        "name": "attachment",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Remove the attachment with the given id from filesystem.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Attachments"
-                ],
-                "summary": "Remove attachment.",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Attachment ID",
-                        "name": "attachment",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/configuration": {
-            "get": {
-                "description": "List the REST API configuration.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "General"
-                ],
-                "summary": "List the REST API configuration.",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/api.Configuration"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Set the REST API configuration.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "General"
-                ],
-                "summary": "Set the REST API configuration.",
-                "parameters": [
-                    {
-                        "description": "Configuration",
-                        "name": "data",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.Configuration"
-                        }
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/configuration/{number}/settings": {
-            "get": {
-                "description": "List account specific settings.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "General"
-                ],
-                "summary": "List account specific settings.",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Registered Phone Number",
-                        "name": "number",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Request",
-                        "name": "data",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.TrustModeResponse"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Set account specific settings.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "General"
-                ],
-                "summary": "Set account specific settings.",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Registered Phone Number",
-                        "name": "number",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Request",
-                        "name": "data",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.TrustModeRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/contacts/{number}": {
+        "/v1/accounts/{number}/contacts": {
             "get": {
                 "description": "List all contacts for the given number.",
                 "produces": [
@@ -633,7 +184,7 @@
                 }
             }
         },
-        "/v1/contacts/{number}/sync": {
+        "/v1/accounts/{number}/contacts/sync": {
             "post": {
                 "description": "Send a synchronization message with the local contacts list to all linked devices. This command should only be used if this is the primary device.",
                 "consumes": [
@@ -668,7 +219,7 @@
                 }
             }
         },
-        "/v1/contacts/{number}/{uuid}": {
+        "/v1/accounts/{number}/contacts/{uuid}": {
             "get": {
                 "description": "List a specific contact.",
                 "produces": [
@@ -703,7 +254,7 @@
                 }
             }
         },
-        "/v1/contacts/{number}/{uuid}/avatar": {
+        "/v1/accounts/{number}/contacts/{uuid}/avatar": {
             "get": {
                 "description": "Returns the avatar of a contact.",
                 "produces": [
@@ -732,7 +283,7 @@
                 }
             }
         },
-        "/v1/devices/{number}": {
+        "/v1/accounts/{number}/devices": {
             "get": {
                 "description": "List linked devices associated to this device.",
                 "consumes": [
@@ -815,50 +366,7 @@
                 }
             }
         },
-        "/v1/devices/{number}/local-data": {
-            "delete": {
-                "description": "Delete all local data for the specified account. Only use this after unregistering the account or after removing a linked device.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Devices"
-                ],
-                "summary": "Delete local account data",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Registered Phone Number",
-                        "name": "number",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Cleanup options",
-                        "name": "data",
-                        "in": "body",
-                        "schema": {
-                            "$ref": "#/definitions/api.DeleteLocalAccountDataRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/devices/{number}/{deviceId}": {
+        "/v1/accounts/{number}/devices/{deviceId}": {
             "delete": {
                 "description": "Remove a linked device from the primary account.",
                 "tags": [
@@ -894,7 +402,7 @@
                 }
             }
         },
-        "/v1/groups/{number}": {
+        "/v1/accounts/{number}/groups": {
             "get": {
                 "description": "List all Signal Groups.",
                 "consumes": [
@@ -986,7 +494,7 @@
                 }
             }
         },
-        "/v1/groups/{number}/{groupid}": {
+        "/v1/accounts/{number}/groups/{groupId}": {
             "get": {
                 "description": "List a specific Signal Group.",
                 "consumes": [
@@ -1132,7 +640,7 @@
                 }
             }
         },
-        "/v1/groups/{number}/{groupid}/admins": {
+        "/v1/accounts/{number}/groups/{groupId}/admins": {
             "post": {
                 "description": "Add one or more admins to an existing Signal Group.",
                 "consumes": [
@@ -1238,7 +746,7 @@
                 }
             }
         },
-        "/v1/groups/{number}/{groupid}/avatar": {
+        "/v1/accounts/{number}/groups/{groupId}/avatar": {
             "get": {
                 "description": "Returns the avatar of a Signal Group.",
                 "consumes": [
@@ -1283,7 +791,7 @@
                 }
             }
         },
-        "/v1/groups/{number}/{groupid}/block": {
+        "/v1/accounts/{number}/groups/{groupId}/block": {
             "post": {
                 "description": "Block the specified Signal Group.",
                 "consumes": [
@@ -1328,7 +836,7 @@
                 }
             }
         },
-        "/v1/groups/{number}/{groupid}/join": {
+        "/v1/accounts/{number}/groups/{groupId}/join": {
             "post": {
                 "description": "Join the specified Signal Group.",
                 "consumes": [
@@ -1373,7 +881,7 @@
                 }
             }
         },
-        "/v1/groups/{number}/{groupid}/members": {
+        "/v1/accounts/{number}/groups/{groupId}/members": {
             "post": {
                 "description": "Add one or more members to an existing Signal Group.",
                 "consumes": [
@@ -1479,7 +987,113 @@
                 }
             }
         },
-        "/v1/groups/{number}/{groupid}/quit": {
+        "/v1/accounts/{number}/groups/{groupId}/pinned-message": {
+            "post": {
+                "description": "Pin a message in a Signal Group.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Pin a message in a Signal Group.",
+                "parameters": [
+                    {
+                        "description": "Pin",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.PinMessageInGroupRequest"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Group Id",
+                        "name": "groupid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Unpin a message in a Signal Group.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Unpin a message in a Signal Group.",
+                "parameters": [
+                    {
+                        "description": "Unpin",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.UnpinMessageInGroupRequest"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Group Id",
+                        "name": "groupid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/accounts/{number}/groups/{groupId}/quit": {
             "post": {
                 "description": "Quit the specified Signal Group.",
                 "consumes": [
@@ -1524,27 +1138,7 @@
                 }
             }
         },
-        "/v1/health": {
-            "get": {
-                "description": "Internally used by the docker container to perform the health check.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "General"
-                ],
-                "summary": "API Health Check",
-                "responses": {
-                    "204": {
-                        "description": "No Content",
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/identities/{number}": {
+        "/v1/accounts/{number}/identities": {
             "get": {
                 "description": "List all identities for the given number.",
                 "produces": [
@@ -1576,7 +1170,7 @@
                 }
             }
         },
-        "/v1/identities/{number}/trust/{numberToTrust}": {
+        "/v1/accounts/{number}/identities/{id}/trust": {
             "put": {
                 "description": "Trust an identity. When 'trust_all_known_keys' is set to' true', all known keys of this user are trusted. **This is only recommended for testing.**",
                 "produces": [
@@ -1621,7 +1215,387 @@
                 }
             }
         },
-        "/v1/polls/{number}": {
+        "/v1/accounts/{number}/local-data": {
+            "delete": {
+                "description": "Delete all local data for the specified account. Only use this after unregistering the account or after removing a linked device.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Delete local account data",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Cleanup options",
+                        "name": "data",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/api.DeleteLocalAccountDataRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/accounts/{number}/messages": {
+            "get": {
+                "description": "Returns all unread Signal messages for the account and marks them as retrieved. Messages are never deleted — use GET /v1/accounts/{number}/messages/history to query the full archive.\nOnly available when DATABASE_URL is configured.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Messages"
+                ],
+                "summary": "Poll unread Signal messages.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/storage.StoredMessage"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Send a signal message. Set the text_mode to 'styled' in case you want to add formatting to your text message. Styling Options: \\*italic text\\*, \\*\\*bold text\\*\\*, ~strikethrough text~, ||spoiler||, \\`monospace\\`. If you want to escape a formatting character, prefix it with two backslashes.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Messages"
+                ],
+                "summary": "Send a signal message.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Input Data",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.SendMessageV2"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.SendMessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.SendMessageError"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/accounts/{number}/messages/history": {
+            "get": {
+                "description": "Returns Signal messages stored in the database, including already-retrieved messages. Supports filtering and pagination.\nOnly available when DATABASE_URL is configured.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Messages"
+                ],
+                "summary": "Get stored Signal messages (history).",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by sender phone number",
+                        "name": "sender",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by group ID",
+                        "name": "group_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by minimum timestamp (milliseconds since epoch)",
+                        "name": "start_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by maximum timestamp (milliseconds since epoch)",
+                        "name": "end_time",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated envelope types to include (default: dataMessage)",
+                        "name": "envelope_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter by retrieved flag (omit for all, true/false to filter)",
+                        "name": "retrieved",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of results (default: 100, max: 1000)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Results offset for pagination (default: 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/storage.StoredMessage"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/accounts/{number}/messages/remote-delete": {
+            "post": {
+                "description": "Delete a signal message",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Messages"
+                ],
+                "summary": "Delete a signal message.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Type",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.RemoteDeleteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.RemoteDeleteResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/accounts/{number}/messages/stream": {
+            "get": {
+                "description": "Opens a WebSocket connection that streams incoming Signal messages in real-time as they are received by the daemon.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Messages"
+                ],
+                "summary": "Stream Signal Messages via WebSocket.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/accounts/{number}/pin": {
+            "post": {
+                "description": "Sets a new Signal Pin",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Set Pin",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Request",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.SetPinRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes a Signal Pin",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Remove Pin",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/accounts/{number}/polls": {
             "post": {
                 "description": "Create a new poll",
                 "consumes": [
@@ -1710,7 +1684,7 @@
                 }
             }
         },
-        "/v1/polls/{number}/vote": {
+        "/v1/accounts/{number}/polls/vote": {
             "post": {
                 "description": "Answer a poll",
                 "consumes": [
@@ -1754,7 +1728,7 @@
                 }
             }
         },
-        "/v1/profiles/{number}": {
+        "/v1/accounts/{number}/profile": {
             "put": {
                 "description": "Set your name and optional an avatar.",
                 "produces": [
@@ -1798,7 +1772,7 @@
                 }
             }
         },
-        "/v1/qrcodelink": {
+        "/v1/accounts/{number}/qr-code": {
             "get": {
                 "description": "Link device and generate QR code",
                 "produces": [
@@ -1839,7 +1813,7 @@
                 }
             }
         },
-        "/v1/qrcodelink/raw": {
+        "/v1/accounts/{number}/qr-code/raw": {
             "get": {
                 "description": "Generate the deviceLinkUri string for linking without scanning a QR code.",
                 "produces": [
@@ -1874,7 +1848,51 @@
                 }
             }
         },
-        "/v1/reactions/{number}": {
+        "/v1/accounts/{number}/rate-limit-challenge": {
+            "post": {
+                "description": "When running into rate limits, sometimes the limit can be lifted, by solving a CAPTCHA. To get the captcha token, go to https://signalcaptchas.org/challenge/generate.html For the staging environment, use: https://signalcaptchas.org/staging/registration/generate.html. The \"challenge_token\" is the token from the failed send attempt. The \"captcha\" is the captcha result, starting with signalcaptcha://",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Lift rate limit restrictions by solving a captcha.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Request",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.RateLimitChallengeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/accounts/{number}/reactions": {
             "post": {
                 "description": "React to a message",
                 "consumes": [
@@ -1966,7 +1984,7 @@
                 }
             }
         },
-        "/v1/receipts/{number}": {
+        "/v1/accounts/{number}/receipts": {
             "post": {
                 "description": "Send a read or viewed receipt",
                 "consumes": [
@@ -2013,90 +2031,7 @@
                 }
             }
         },
-        "/v1/receive/{number}": {
-            "get": {
-                "description": "Receives Signal Messages from the Signal Network. If you are running the docker container in normal/native mode, this is a GET endpoint. In json-rpc mode this is a websocket endpoint.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Messages"
-                ],
-                "summary": "Receive Signal Messages.",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Registered Phone Number",
-                        "name": "number",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Receive timeout in seconds (default: 1)",
-                        "name": "timeout",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Specify whether the attachments of the received message should be ignored",
-                        "name": "ignore_attachments",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Specify whether stories should be ignored when receiving messages",
-                        "name": "ignore_stories",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Specify whether avatar downloads should be ignored when receiving messages",
-                        "name": "ignore_avatars",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Specify whether sticker pack downloads should be ignored when receiving messages",
-                        "name": "ignore_stickers",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Specify the maximum number of messages to receive (default: unlimited)",
-                        "name": "max_messages",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Specify whether read receipts should be sent when receiving messages",
-                        "name": "send_read_receipts",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/register/{number}": {
+        "/v1/accounts/{number}/register": {
             "post": {
                 "description": "Register a phone number with the signal network.",
                 "consumes": [
@@ -2139,7 +2074,7 @@
                 }
             }
         },
-        "/v1/register/{number}/verify/{token}": {
+        "/v1/accounts/{number}/register/verify/{token}": {
             "post": {
                 "description": "Verify a registered phone number with the signal network.",
                 "consumes": [
@@ -2192,9 +2127,9 @@
                 }
             }
         },
-        "/v1/remote-delete/{number}": {
-            "delete": {
-                "description": "Delete a signal message",
+        "/v1/accounts/{number}/settings": {
+            "put": {
+                "description": "Update the account attributes on the signal server.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2202,9 +2137,9 @@
                     "application/json"
                 ],
                 "tags": [
-                    "Messages"
+                    "Accounts"
                 ],
-                "summary": "Delete a signal message.",
+                "summary": "Update the account settings.",
                 "parameters": [
                     {
                         "type": "string",
@@ -2214,21 +2149,18 @@
                         "required": true
                     },
                     {
-                        "description": "Type",
+                        "description": "Request",
                         "name": "data",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.RemoteDeleteRequest"
+                            "$ref": "#/definitions/api.UpdateAccountSettingsRequest"
                         }
                     }
                 ],
                 "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/api.RemoteDeleteResponse"
-                        }
+                    "204": {
+                        "description": "No Content"
                     },
                     "400": {
                         "description": "Bad Request",
@@ -2239,100 +2171,7 @@
                 }
             }
         },
-        "/v1/search/{number}": {
-            "get": {
-                "description": "Check if one or more phone numbers are registered with the Signal Service.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Search"
-                ],
-                "summary": "Check if one or more phone numbers are registered with the Signal Service.",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Registered Phone Number",
-                        "name": "number",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "collectionFormat": "multi",
-                        "description": "Numbers to check",
-                        "name": "numbers",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/api.SearchResponse"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/send": {
-            "post": {
-                "description": "Send a signal message",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Messages"
-                ],
-                "summary": "Send a signal message.",
-                "deprecated": true,
-                "parameters": [
-                    {
-                        "description": "Input Data",
-                        "name": "data",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.SendMessageV1"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/api.Error"
-                        }
-                    }
-                }
-            }
-        },
-        "/v1/sticker-packs/{number}": {
+        "/v1/accounts/{number}/sticker-packs": {
             "get": {
                 "description": "List Installed Sticker Packs.",
                 "consumes": [
@@ -2418,8 +2257,94 @@
                 }
             }
         },
-        "/v1/typing-indicator/{number}": {
+        "/v1/accounts/{number}/trust-mode": {
+            "get": {
+                "description": "List account specific settings.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "General"
+                ],
+                "summary": "List account specific settings.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Request",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.TrustModeResponse"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            },
             "put": {
+                "description": "Set account specific settings.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "General"
+                ],
+                "summary": "Set account specific settings.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Request",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.TrustModeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/accounts/{number}/typing": {
+            "post": {
                 "description": "Show Typing Indicator.",
                 "consumes": [
                     "application/json"
@@ -2510,9 +2435,9 @@
                 }
             }
         },
-        "/v1/unregister/{number}": {
+        "/v1/accounts/{number}/username": {
             "post": {
-                "description": "Disables push support for this device. **WARNING:** If *delete_account* is set to *true*, the account will be deleted from the Signal Server. This cannot be undone without loss.",
+                "description": "Allows to set the username that should be used for this account. This can either be just the nickname (e.g. test) or the complete username with discriminator (e.g. test.123). Returns the new username with discriminator and the username link.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2520,9 +2445,9 @@
                     "application/json"
                 ],
                 "tags": [
-                    "Devices"
+                    "Accounts"
                 ],
-                "summary": "Unregister a phone number.",
+                "summary": "Set a username.",
                 "parameters": [
                     {
                         "type": "string",
@@ -2532,12 +2457,52 @@
                         "required": true
                     },
                     {
-                        "description": "Additional Settings",
+                        "description": "Request",
                         "name": "data",
                         "in": "body",
+                        "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.UnregisterNumberRequest"
+                            "$ref": "#/definitions/api.SetUsernameRequest"
                         }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/client.SetUsernameResponse"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete the username associated with this account.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Accounts"
+                ],
+                "summary": "Remove a username.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -2553,9 +2518,106 @@
                 }
             }
         },
-        "/v2/send": {
-            "post": {
-                "description": "Send a signal message. Set the text_mode to 'styled' in case you want to add formatting to your text message. Styling Options: \\*italic text\\*, \\*\\*bold text\\*\\*, ~strikethrough text~, ||spoiler||, \\`monospace\\`. If you want to escape a formatting character, prefix it with two backslashes.",
+        "/v1/attachments": {
+            "get": {
+                "description": "List all downloaded attachments",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Attachments"
+                ],
+                "summary": "List all attachments.",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/attachments/{id}": {
+            "get": {
+                "description": "Serve the attachment with the given id",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Attachments"
+                ],
+                "summary": "Serve Attachment.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Attachment ID",
+                        "name": "attachment",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove the attachment with the given id from filesystem.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Attachments"
+                ],
+                "summary": "Remove attachment.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Attachment ID",
+                        "name": "attachment",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/configuration": {
+            "get": {
+                "description": "List the REST API configuration.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2563,31 +2625,130 @@
                     "application/json"
                 ],
                 "tags": [
-                    "Messages"
+                    "General"
                 ],
-                "summary": "Send a signal message.",
-                "parameters": [
-                    {
-                        "description": "Input Data",
-                        "name": "data",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/api.SendMessageV2"
-                        }
-                    }
-                ],
+                "summary": "List the REST API configuration.",
                 "responses": {
-                    "201": {
-                        "description": "Created",
+                    "200": {
+                        "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/api.SendMessageResponse"
+                            "$ref": "#/definitions/api.Configuration"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/api.SendMessageError"
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Set the REST API configuration.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "General"
+                ],
+                "summary": "Set the REST API configuration.",
+                "parameters": [
+                    {
+                        "description": "Configuration",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.Configuration"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/health": {
+            "get": {
+                "description": "Internally used by the docker container to perform the health check.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "General"
+                ],
+                "summary": "API Health Check",
+                "responses": {
+                    "204": {
+                        "description": "No Content",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/search": {
+            "get": {
+                "description": "Check if one or more phone numbers are registered with the Signal Service.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Search"
+                ],
+                "summary": "Check if one or more phone numbers are registered with the Signal Service.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Registered Phone Number",
+                        "name": "number",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Numbers to check",
+                        "name": "numbers",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/api.SearchResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/api.Error"
                         }
                     }
                 }
@@ -2768,6 +2929,20 @@
                 }
             }
         },
+        "api.PinMessageInGroupRequest": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "type": "integer"
+                },
+                "target_author": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "integer"
+                }
+            }
+        },
         "api.RateLimitChallengeRequest": {
             "type": "object",
             "properties": {
@@ -2882,30 +3057,6 @@
                 }
             }
         },
-        "api.SendMessageV1": {
-            "type": "object",
-            "properties": {
-                "base64_attachment": {
-                    "type": "string",
-                    "example": "'\u003cBASE64 ENCODED DATA\u003e' OR 'data:\u003cMIME-TYPE\u003e;base64,\u003cBASE64 ENCODED DATA\u003e' OR 'data:\u003cMIME-TYPE\u003e;filename=\u003cFILENAME\u003e;base64,\u003cBASE64 ENCODED DATA\u003e'"
-                },
-                "is_group": {
-                    "type": "boolean"
-                },
-                "message": {
-                    "type": "string"
-                },
-                "number": {
-                    "type": "string"
-                },
-                "recipients": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
         "api.SendMessageV2": {
             "type": "object",
             "properties": {
@@ -2937,9 +3088,6 @@
                 },
                 "notify_self": {
                     "type": "boolean"
-                },
-                "number": {
-                    "type": "string"
                 },
                 "quote_author": {
                     "type": "string"
@@ -3027,6 +3175,17 @@
             "properties": {
                 "recipient": {
                     "type": "string"
+                }
+            }
+        },
+        "api.UnpinMessageInGroupRequest": {
+            "type": "object",
+            "properties": {
+                "target_author": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "integer"
                 }
             }
         },
@@ -3422,6 +3581,47 @@
                     "type": "integer"
                 },
                 "start": {
+                    "type": "integer"
+                }
+            }
+        },
+        "storage.StoredMessage": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "type": "string"
+                },
+                "envelope_type": {
+                    "type": "string"
+                },
+                "group_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "message_text": {
+                    "type": "string"
+                },
+                "raw_json": {
+                    "type": "object"
+                },
+                "received_at": {
+                    "type": "string"
+                },
+                "retrieved": {
+                    "type": "boolean"
+                },
+                "sender": {
+                    "type": "string"
+                },
+                "sender_name": {
+                    "type": "string"
+                },
+                "source_device": {
+                    "type": "integer"
+                },
+                "timestamp": {
                     "type": "integer"
                 }
             }

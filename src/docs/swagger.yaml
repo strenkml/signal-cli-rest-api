@@ -115,6 +115,15 @@ definitions:
       Level:
         type: string
     type: object
+  api.PinMessageInGroupRequest:
+    properties:
+      duration:
+        type: integer
+      target_author:
+        type: string
+      timestamp:
+        type: integer
+    type: object
   api.RateLimitChallengeRequest:
     properties:
       captcha:
@@ -189,24 +198,6 @@ definitions:
       timestamp:
         type: string
     type: object
-  api.SendMessageV1:
-    properties:
-      base64_attachment:
-        example: '''<BASE64 ENCODED DATA>'' OR ''data:<MIME-TYPE>;base64,<BASE64 ENCODED
-          DATA>'' OR ''data:<MIME-TYPE>;filename=<FILENAME>;base64,<BASE64 ENCODED
-          DATA>'''
-        type: string
-      is_group:
-        type: boolean
-      message:
-        type: string
-      number:
-        type: string
-      recipients:
-        items:
-          type: string
-        type: array
-    type: object
   api.SendMessageV2:
     properties:
       base64_attachments:
@@ -229,8 +220,6 @@ definitions:
         type: string
       notify_self:
         type: boolean
-      number:
-        type: string
       quote_author:
         type: string
       quote_mentions:
@@ -288,6 +277,13 @@ definitions:
     properties:
       recipient:
         type: string
+    type: object
+  api.UnpinMessageInGroupRequest:
+    properties:
+      target_author:
+        type: string
+      timestamp:
+        type: integer
     type: object
   api.UnregisterNumberRequest:
     properties:
@@ -550,6 +546,33 @@ definitions:
       start:
         type: integer
     type: object
+  storage.StoredMessage:
+    properties:
+      account:
+        type: string
+      envelope_type:
+        type: string
+      group_id:
+        type: string
+      id:
+        type: integer
+      message_text:
+        type: string
+      raw_json:
+        type: object
+      received_at:
+        type: string
+      retrieved:
+        type: boolean
+      sender:
+        type: string
+      sender_name:
+        type: string
+      source_device:
+        type: integer
+      timestamp:
+        type: integer
+    type: object
 host: localhost:8080
 info:
   contact: {}
@@ -589,126 +612,24 @@ paths:
       summary: List all accounts
       tags:
       - Accounts
-  /v1/accounts/{number}/pin:
-    delete:
-      description: Removes a Signal Pin
-      parameters:
-      - description: Registered Phone Number
-        in: path
-        name: number
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Remove Pin
-      tags:
-      - Accounts
-    post:
-      description: Sets a new Signal Pin
-      parameters:
-      - description: Registered Phone Number
-        in: path
-        name: number
-        required: true
-        type: string
-      - description: Request
-        in: body
-        name: data
-        required: true
-        schema:
-          $ref: '#/definitions/api.SetPinRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Set Pin
-      tags:
-      - Accounts
-  /v1/accounts/{number}/rate-limit-challenge:
-    post:
-      consumes:
-      - application/json
-      description: 'When running into rate limits, sometimes the limit can be lifted,
-        by solving a CAPTCHA. To get the captcha token, go to https://signalcaptchas.org/challenge/generate.html
-        For the staging environment, use: https://signalcaptchas.org/staging/registration/generate.html.
-        The "challenge_token" is the token from the failed send attempt. The "captcha"
-        is the captcha result, starting with signalcaptcha://'
-      parameters:
-      - description: Registered Phone Number
-        in: path
-        name: number
-        required: true
-        type: string
-      - description: Request
-        in: body
-        name: data
-        required: true
-        schema:
-          $ref: '#/definitions/api.RateLimitChallengeRequest'
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Lift rate limit restrictions by solving a captcha.
-      tags:
-      - Accounts
-  /v1/accounts/{number}/settings:
-    put:
-      consumes:
-      - application/json
-      description: Update the account attributes on the signal server.
-      parameters:
-      - description: Registered Phone Number
-        in: path
-        name: number
-        required: true
-        type: string
-      - description: Request
-        in: body
-        name: data
-        required: true
-        schema:
-          $ref: '#/definitions/api.UpdateAccountSettingsRequest'
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Update the account settings.
-      tags:
-      - Accounts
-  /v1/accounts/{number}/username:
+  /v1/accounts/{number}:
     delete:
       consumes:
       - application/json
-      description: Delete the username associated with this account.
+      description: Disables push support for this device. **WARNING:** If *delete_account*
+        is set to *true*, the account will be deleted from the Signal Server. This
+        cannot be undone without loss.
       parameters:
       - description: Registered Phone Number
         in: path
         name: number
         required: true
         type: string
+      - description: Additional Settings
+        in: body
+        name: data
+        schema:
+          $ref: '#/definitions/api.UnregisterNumberRequest'
       produces:
       - application/json
       responses:
@@ -718,210 +639,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/api.Error'
-      summary: Remove a username.
+      summary: Unregister a phone number.
       tags:
-      - Accounts
-    post:
-      consumes:
-      - application/json
-      description: Allows to set the username that should be used for this account.
-        This can either be just the nickname (e.g. test) or the complete username
-        with discriminator (e.g. test.123). Returns the new username with discriminator
-        and the username link.
-      parameters:
-      - description: Registered Phone Number
-        in: path
-        name: number
-        required: true
-        type: string
-      - description: Request
-        in: body
-        name: data
-        required: true
-        schema:
-          $ref: '#/definitions/api.SetUsernameRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/client.SetUsernameResponse'
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Set a username.
-      tags:
-      - Accounts
-  /v1/attachments:
-    get:
-      description: List all downloaded attachments
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              type: string
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: List all attachments.
-      tags:
-      - Attachments
-  /v1/attachments/{attachment}:
-    delete:
-      description: Remove the attachment with the given id from filesystem.
-      parameters:
-      - description: Attachment ID
-        in: path
-        name: attachment
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Remove attachment.
-      tags:
-      - Attachments
-    get:
-      description: Serve the attachment with the given id
-      parameters:
-      - description: Attachment ID
-        in: path
-        name: attachment
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Serve Attachment.
-      tags:
-      - Attachments
-  /v1/configuration:
-    get:
-      consumes:
-      - application/json
-      description: List the REST API configuration.
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/api.Configuration'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: List the REST API configuration.
-      tags:
-      - General
-    post:
-      consumes:
-      - application/json
-      description: Set the REST API configuration.
-      parameters:
-      - description: Configuration
-        in: body
-        name: data
-        required: true
-        schema:
-          $ref: '#/definitions/api.Configuration'
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Set the REST API configuration.
-      tags:
-      - General
-  /v1/configuration/{number}/settings:
-    get:
-      consumes:
-      - application/json
-      description: List account specific settings.
-      parameters:
-      - description: Registered Phone Number
-        in: path
-        name: number
-        required: true
-        type: string
-      - description: Request
-        in: body
-        name: data
-        required: true
-        schema:
-          $ref: '#/definitions/api.TrustModeResponse'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: List account specific settings.
-      tags:
-      - General
-    post:
-      consumes:
-      - application/json
-      description: Set account specific settings.
-      parameters:
-      - description: Registered Phone Number
-        in: path
-        name: number
-        required: true
-        type: string
-      - description: Request
-        in: body
-        name: data
-        required: true
-        schema:
-          $ref: '#/definitions/api.TrustModeRequest'
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Set account specific settings.
-      tags:
-      - General
-  /v1/contacts/{number}:
+      - Devices
+  /v1/accounts/{number}/contacts:
     get:
       description: List all contacts for the given number.
       parameters:
@@ -975,7 +696,7 @@ paths:
         contact doesn’t exist yet, it will be added.
       tags:
       - Contacts
-  /v1/contacts/{number}/{uuid}:
+  /v1/accounts/{number}/contacts/{uuid}:
     get:
       description: List a specific contact.
       parameters:
@@ -998,7 +719,7 @@ paths:
       summary: List Contact
       tags:
       - Contacts
-  /v1/contacts/{number}/{uuid}/avatar:
+  /v1/accounts/{number}/contacts/{uuid}/avatar:
     get:
       description: Returns the avatar of a contact.
       parameters:
@@ -1017,7 +738,7 @@ paths:
       summary: Returns the avatar of a contact
       tags:
       - Contacts
-  /v1/contacts/{number}/sync:
+  /v1/accounts/{number}/contacts/sync:
     post:
       consumes:
       - application/json
@@ -1043,7 +764,7 @@ paths:
         linked devices.
       tags:
       - Contacts
-  /v1/devices/{number}:
+  /v1/accounts/{number}/devices:
     get:
       consumes:
       - application/json
@@ -1099,7 +820,7 @@ paths:
       summary: Links another device to this device.
       tags:
       - Devices
-  /v1/devices/{number}/{deviceId}:
+  /v1/accounts/{number}/devices/{deviceId}:
     delete:
       description: Remove a linked device from the primary account.
       parameters:
@@ -1123,36 +844,7 @@ paths:
       summary: Remove linked device
       tags:
       - Devices
-  /v1/devices/{number}/local-data:
-    delete:
-      consumes:
-      - application/json
-      description: Delete all local data for the specified account. Only use this
-        after unregistering the account or after removing a linked device.
-      parameters:
-      - description: Registered Phone Number
-        in: path
-        name: number
-        required: true
-        type: string
-      - description: Cleanup options
-        in: body
-        name: data
-        schema:
-          $ref: '#/definitions/api.DeleteLocalAccountDataRequest'
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Delete local account data
-      tags:
-      - Devices
-  /v1/groups/{number}:
+  /v1/accounts/{number}/groups:
     get:
       consumes:
       - application/json
@@ -1213,7 +905,7 @@ paths:
       summary: Create a new Signal Group.
       tags:
       - Groups
-  /v1/groups/{number}/{groupid}:
+  /v1/accounts/{number}/groups/{groupId}:
     delete:
       consumes:
       - application/json
@@ -1311,7 +1003,7 @@ paths:
       summary: Update the state of a Signal Group.
       tags:
       - Groups
-  /v1/groups/{number}/{groupid}/admins:
+  /v1/accounts/{number}/groups/{groupId}/admins:
     delete:
       consumes:
       - application/json
@@ -1382,7 +1074,7 @@ paths:
       summary: Add one or more admins to an existing Signal Group.
       tags:
       - Groups
-  /v1/groups/{number}/{groupid}/avatar:
+  /v1/accounts/{number}/groups/{groupId}/avatar:
     get:
       consumes:
       - application/json
@@ -1412,7 +1104,7 @@ paths:
       summary: Returns the avatar of a Signal Group.
       tags:
       - Groups
-  /v1/groups/{number}/{groupid}/block:
+  /v1/accounts/{number}/groups/{groupId}/block:
     post:
       consumes:
       - application/json
@@ -1442,7 +1134,7 @@ paths:
       summary: Block a Signal Group.
       tags:
       - Groups
-  /v1/groups/{number}/{groupid}/join:
+  /v1/accounts/{number}/groups/{groupId}/join:
     post:
       consumes:
       - application/json
@@ -1472,7 +1164,7 @@ paths:
       summary: Join a Signal Group.
       tags:
       - Groups
-  /v1/groups/{number}/{groupid}/members:
+  /v1/accounts/{number}/groups/{groupId}/members:
     delete:
       consumes:
       - application/json
@@ -1543,7 +1235,78 @@ paths:
       summary: Add one or more members to an existing Signal Group.
       tags:
       - Groups
-  /v1/groups/{number}/{groupid}/quit:
+  /v1/accounts/{number}/groups/{groupId}/pinned-message:
+    delete:
+      consumes:
+      - application/json
+      description: Unpin a message in a Signal Group.
+      parameters:
+      - description: Unpin
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/api.UnpinMessageInGroupRequest'
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Group Id
+        in: path
+        name: groupid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Unpin a message in a Signal Group.
+      tags:
+      - Groups
+    post:
+      consumes:
+      - application/json
+      description: Pin a message in a Signal Group.
+      parameters:
+      - description: Pin
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/api.PinMessageInGroupRequest'
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Group Id
+        in: path
+        name: groupid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Pin a message in a Signal Group.
+      tags:
+      - Groups
+  /v1/accounts/{number}/groups/{groupId}/quit:
     post:
       consumes:
       - application/json
@@ -1573,20 +1336,7 @@ paths:
       summary: Quit a Signal Group.
       tags:
       - Groups
-  /v1/health:
-    get:
-      description: Internally used by the docker container to perform the health check.
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-          schema:
-            type: string
-      summary: API Health Check
-      tags:
-      - General
-  /v1/identities/{number}:
+  /v1/accounts/{number}/identities:
     get:
       description: List all identities for the given number.
       parameters:
@@ -1607,7 +1357,7 @@ paths:
       summary: List Identities
       tags:
       - Identities
-  /v1/identities/{number}/trust/{numberToTrust}:
+  /v1/accounts/{number}/identities/{id}/trust:
     put:
       description: Trust an identity. When 'trust_all_known_keys' is set to' true',
         all known keys of this user are trusted. **This is only recommended for testing.**
@@ -1638,7 +1388,267 @@ paths:
       summary: Trust Identity
       tags:
       - Identities
-  /v1/polls/{number}:
+  /v1/accounts/{number}/local-data:
+    delete:
+      consumes:
+      - application/json
+      description: Delete all local data for the specified account. Only use this
+        after unregistering the account or after removing a linked device.
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Cleanup options
+        in: body
+        name: data
+        schema:
+          $ref: '#/definitions/api.DeleteLocalAccountDataRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Delete local account data
+      tags:
+      - Devices
+  /v1/accounts/{number}/messages:
+    get:
+      description: |-
+        Returns all unread Signal messages for the account and marks them as retrieved. Messages are never deleted — use GET /v1/accounts/{number}/messages/history to query the full archive.
+        Only available when DATABASE_URL is configured.
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/storage.StoredMessage'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Poll unread Signal messages.
+      tags:
+      - Messages
+    post:
+      consumes:
+      - application/json
+      description: 'Send a signal message. Set the text_mode to ''styled'' in case
+        you want to add formatting to your text message. Styling Options: \*italic
+        text\*, \*\*bold text\*\*, ~strikethrough text~, ||spoiler||, \`monospace\`.
+        If you want to escape a formatting character, prefix it with two backslashes.'
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Input Data
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/api.SendMessageV2'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.SendMessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.SendMessageError'
+      summary: Send a signal message.
+      tags:
+      - Messages
+  /v1/accounts/{number}/messages/history:
+    get:
+      description: |-
+        Returns Signal messages stored in the database, including already-retrieved messages. Supports filtering and pagination.
+        Only available when DATABASE_URL is configured.
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Filter by sender phone number
+        in: query
+        name: sender
+        type: string
+      - description: Filter by group ID
+        in: query
+        name: group_id
+        type: string
+      - description: Filter by minimum timestamp (milliseconds since epoch)
+        in: query
+        name: start_time
+        type: integer
+      - description: Filter by maximum timestamp (milliseconds since epoch)
+        in: query
+        name: end_time
+        type: integer
+      - description: 'Comma-separated envelope types to include (default: dataMessage)'
+        in: query
+        name: envelope_type
+        type: string
+      - description: Filter by retrieved flag (omit for all, true/false to filter)
+        in: query
+        name: retrieved
+        type: boolean
+      - description: 'Maximum number of results (default: 100, max: 1000)'
+        in: query
+        name: limit
+        type: integer
+      - description: 'Results offset for pagination (default: 0)'
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/storage.StoredMessage'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Get stored Signal messages (history).
+      tags:
+      - Messages
+  /v1/accounts/{number}/messages/remote-delete:
+    post:
+      consumes:
+      - application/json
+      description: Delete a signal message
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Type
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/api.RemoteDeleteRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.RemoteDeleteResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Delete a signal message.
+      tags:
+      - Messages
+  /v1/accounts/{number}/messages/stream:
+    get:
+      description: Opens a WebSocket connection that streams incoming Signal messages
+        in real-time as they are received by the daemon.
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Stream Signal Messages via WebSocket.
+      tags:
+      - Messages
+  /v1/accounts/{number}/pin:
+    delete:
+      description: Removes a Signal Pin
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Remove Pin
+      tags:
+      - Accounts
+    post:
+      description: Sets a new Signal Pin
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Request
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/api.SetPinRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Set Pin
+      tags:
+      - Accounts
+  /v1/accounts/{number}/polls:
     delete:
       consumes:
       - application/json
@@ -1697,7 +1707,7 @@ paths:
       summary: Create a new poll.
       tags:
       - Polls
-  /v1/polls/{number}/vote:
+  /v1/accounts/{number}/polls/vote:
     post:
       consumes:
       - application/json
@@ -1726,7 +1736,7 @@ paths:
       summary: Answer a poll.
       tags:
       - Polls
-  /v1/profiles/{number}:
+  /v1/accounts/{number}/profile:
     put:
       description: Set your name and optional an avatar.
       parameters:
@@ -1755,7 +1765,7 @@ paths:
       summary: Update Profile.
       tags:
       - Profiles
-  /v1/qrcodelink:
+  /v1/accounts/{number}/qr-code:
     get:
       description: Link device and generate QR code
       parameters:
@@ -1782,7 +1792,7 @@ paths:
       summary: Link device and generate QR code.
       tags:
       - Devices
-  /v1/qrcodelink/raw:
+  /v1/accounts/{number}/qr-code/raw:
     get:
       description: Generate the deviceLinkUri string for linking without scanning
         a QR code.
@@ -1806,7 +1816,40 @@ paths:
       summary: Get raw device link URI
       tags:
       - Devices
-  /v1/reactions/{number}:
+  /v1/accounts/{number}/rate-limit-challenge:
+    post:
+      consumes:
+      - application/json
+      description: 'When running into rate limits, sometimes the limit can be lifted,
+        by solving a CAPTCHA. To get the captcha token, go to https://signalcaptchas.org/challenge/generate.html
+        For the staging environment, use: https://signalcaptchas.org/staging/registration/generate.html.
+        The "challenge_token" is the token from the failed send attempt. The "captcha"
+        is the captcha result, starting with signalcaptcha://'
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Request
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/api.RateLimitChallengeRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Lift rate limit restrictions by solving a captcha.
+      tags:
+      - Accounts
+  /v1/accounts/{number}/reactions:
     delete:
       consumes:
       - application/json
@@ -1867,7 +1910,7 @@ paths:
       summary: Send a reaction.
       tags:
       - Reactions
-  /v1/receipts/{number}:
+  /v1/accounts/{number}/receipts:
     post:
       consumes:
       - application/json
@@ -1898,68 +1941,7 @@ paths:
       summary: Send a receipt.
       tags:
       - Receipts
-  /v1/receive/{number}:
-    get:
-      consumes:
-      - application/json
-      description: Receives Signal Messages from the Signal Network. If you are running
-        the docker container in normal/native mode, this is a GET endpoint. In json-rpc
-        mode this is a websocket endpoint.
-      parameters:
-      - description: Registered Phone Number
-        in: path
-        name: number
-        required: true
-        type: string
-      - description: 'Receive timeout in seconds (default: 1)'
-        in: query
-        name: timeout
-        type: string
-      - description: Specify whether the attachments of the received message should
-          be ignored
-        in: query
-        name: ignore_attachments
-        type: string
-      - description: Specify whether stories should be ignored when receiving messages
-        in: query
-        name: ignore_stories
-        type: string
-      - description: Specify whether avatar downloads should be ignored when receiving
-          messages
-        in: query
-        name: ignore_avatars
-        type: string
-      - description: Specify whether sticker pack downloads should be ignored when
-          receiving messages
-        in: query
-        name: ignore_stickers
-        type: string
-      - description: 'Specify the maximum number of messages to receive (default:
-          unlimited)'
-        in: query
-        name: max_messages
-        type: string
-      - description: Specify whether read receipts should be sent when receiving messages
-        in: query
-        name: send_read_receipts
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              type: string
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Receive Signal Messages.
-      tags:
-      - Messages
-  /v1/register/{number}:
+  /v1/accounts/{number}/register:
     post:
       consumes:
       - application/json
@@ -1987,7 +1969,7 @@ paths:
       summary: Register a phone number.
       tags:
       - Devices
-  /v1/register/{number}/verify/{token}:
+  /v1/accounts/{number}/register/verify/{token}:
     post:
       consumes:
       - application/json
@@ -2022,101 +2004,36 @@ paths:
       summary: Verify a registered phone number.
       tags:
       - Devices
-  /v1/remote-delete/{number}:
-    delete:
+  /v1/accounts/{number}/settings:
+    put:
       consumes:
       - application/json
-      description: Delete a signal message
+      description: Update the account attributes on the signal server.
       parameters:
       - description: Registered Phone Number
         in: path
         name: number
         required: true
         type: string
-      - description: Type
+      - description: Request
         in: body
         name: data
         required: true
         schema:
-          $ref: '#/definitions/api.RemoteDeleteRequest'
+          $ref: '#/definitions/api.UpdateAccountSettingsRequest'
       produces:
       - application/json
       responses:
-        "201":
-          description: Created
-          schema:
-            $ref: '#/definitions/api.RemoteDeleteResponse'
+        "204":
+          description: No Content
         "400":
           description: Bad Request
           schema:
             $ref: '#/definitions/api.Error'
-      summary: Delete a signal message.
+      summary: Update the account settings.
       tags:
-      - Messages
-  /v1/search/{number}:
-    get:
-      consumes:
-      - application/json
-      description: Check if one or more phone numbers are registered with the Signal
-        Service.
-      parameters:
-      - description: Registered Phone Number
-        in: path
-        name: number
-        required: true
-        type: string
-      - collectionFormat: multi
-        description: Numbers to check
-        in: query
-        items:
-          type: string
-        name: numbers
-        required: true
-        type: array
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/api.SearchResponse'
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Check if one or more phone numbers are registered with the Signal Service.
-      tags:
-      - Search
-  /v1/send:
-    post:
-      consumes:
-      - application/json
-      deprecated: true
-      description: Send a signal message
-      parameters:
-      - description: Input Data
-        in: body
-        name: data
-        required: true
-        schema:
-          $ref: '#/definitions/api.SendMessageV1'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.Error'
-      summary: Send a signal message.
-      tags:
-      - Messages
-  /v1/sticker-packs/{number}:
+      - Accounts
+  /v1/accounts/{number}/sticker-packs:
     get:
       consumes:
       - application/json
@@ -2177,7 +2094,64 @@ paths:
       summary: Add Sticker Pack.
       tags:
       - Sticker Packs
-  /v1/typing-indicator/{number}:
+  /v1/accounts/{number}/trust-mode:
+    get:
+      consumes:
+      - application/json
+      description: List account specific settings.
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Request
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/api.TrustModeResponse'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: List account specific settings.
+      tags:
+      - General
+    put:
+      consumes:
+      - application/json
+      description: Set account specific settings.
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Request
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/api.TrustModeRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Set account specific settings.
+      tags:
+      - General
+  /v1/accounts/{number}/typing:
     delete:
       consumes:
       - application/json
@@ -2208,7 +2182,7 @@ paths:
       summary: Hide Typing Indicator.
       tags:
       - Messages
-    put:
+    post:
       consumes:
       - application/json
       description: Show Typing Indicator.
@@ -2238,24 +2212,17 @@ paths:
       summary: Show Typing Indicator.
       tags:
       - Messages
-  /v1/unregister/{number}:
-    post:
+  /v1/accounts/{number}/username:
+    delete:
       consumes:
       - application/json
-      description: Disables push support for this device. **WARNING:** If *delete_account*
-        is set to *true*, the account will be deleted from the Signal Server. This
-        cannot be undone without loss.
+      description: Delete the username associated with this account.
       parameters:
       - description: Registered Phone Number
         in: path
         name: number
         required: true
         type: string
-      - description: Additional Settings
-        in: body
-        name: data
-        schema:
-          $ref: '#/definitions/api.UnregisterNumberRequest'
       produces:
       - application/json
       responses:
@@ -2265,38 +2232,201 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/api.Error'
-      summary: Unregister a phone number.
+      summary: Remove a username.
       tags:
-      - Devices
-  /v2/send:
+      - Accounts
     post:
       consumes:
       - application/json
-      description: 'Send a signal message. Set the text_mode to ''styled'' in case
-        you want to add formatting to your text message. Styling Options: \*italic
-        text\*, \*\*bold text\*\*, ~strikethrough text~, ||spoiler||, \`monospace\`.
-        If you want to escape a formatting character, prefix it with two backslashes.'
+      description: Allows to set the username that should be used for this account.
+        This can either be just the nickname (e.g. test) or the complete username
+        with discriminator (e.g. test.123). Returns the new username with discriminator
+        and the username link.
       parameters:
-      - description: Input Data
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - description: Request
         in: body
         name: data
         required: true
         schema:
-          $ref: '#/definitions/api.SendMessageV2'
+          $ref: '#/definitions/api.SetUsernameRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/api.SendMessageResponse'
+            $ref: '#/definitions/client.SetUsernameResponse'
+        "204":
+          description: No Content
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/api.SendMessageError'
-      summary: Send a signal message.
+            $ref: '#/definitions/api.Error'
+      summary: Set a username.
       tags:
-      - Messages
+      - Accounts
+  /v1/attachments:
+    get:
+      description: List all downloaded attachments
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: List all attachments.
+      tags:
+      - Attachments
+  /v1/attachments/{id}:
+    delete:
+      description: Remove the attachment with the given id from filesystem.
+      parameters:
+      - description: Attachment ID
+        in: path
+        name: attachment
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Remove attachment.
+      tags:
+      - Attachments
+    get:
+      description: Serve the attachment with the given id
+      parameters:
+      - description: Attachment ID
+        in: path
+        name: attachment
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Serve Attachment.
+      tags:
+      - Attachments
+  /v1/configuration:
+    get:
+      consumes:
+      - application/json
+      description: List the REST API configuration.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.Configuration'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: List the REST API configuration.
+      tags:
+      - General
+    post:
+      consumes:
+      - application/json
+      description: Set the REST API configuration.
+      parameters:
+      - description: Configuration
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/api.Configuration'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Set the REST API configuration.
+      tags:
+      - General
+  /v1/health:
+    get:
+      description: Internally used by the docker container to perform the health check.
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+          schema:
+            type: string
+      summary: API Health Check
+      tags:
+      - General
+  /v1/search:
+    get:
+      consumes:
+      - application/json
+      description: Check if one or more phone numbers are registered with the Signal
+        Service.
+      parameters:
+      - description: Registered Phone Number
+        in: path
+        name: number
+        required: true
+        type: string
+      - collectionFormat: multi
+        description: Numbers to check
+        in: query
+        items:
+          type: string
+        name: numbers
+        required: true
+        type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/api.SearchResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.Error'
+      summary: Check if one or more phone numbers are registered with the Signal Service.
+      tags:
+      - Search
 schemes:
 - http
 swagger: "2.0"

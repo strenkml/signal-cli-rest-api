@@ -25,9 +25,6 @@ import (
 )
 
 const (
-	// Time allowed to write the file to the client.
-	writeWait = 10 * time.Second
-
 	// Time allowed to read the next pong message from the client.
 	pongWait = 60 * time.Second
 
@@ -113,16 +110,7 @@ type Receipt struct {
 	Timestamp   int64  `json:"timestamp"`
 }
 
-type SendMessageV1 struct {
-	Number           string   `json:"number"`
-	Recipients       []string `json:"recipients"`
-	Message          string   `json:"message"`
-	Base64Attachment string   `json:"base64_attachment" example:"'<BASE64 ENCODED DATA>' OR 'data:<MIME-TYPE>;base64,<BASE64 ENCODED DATA>' OR 'data:<MIME-TYPE>;filename=<FILENAME>;base64,<BASE64 ENCODED DATA>'"`
-	IsGroup          bool     `json:"is_group"`
-}
-
 type SendMessageV2 struct {
-	Number            string              `json:"number"`
 	Recipients        []string            `json:"recipients"`
 	Recipient         string              `json:"recipient" swaggerignore:"true"` //some REST API consumers (like the Synology NAS) do not support an array as recipients, so we provide this string parameter here as backup. In order to not confuse anyone, the parameter won't be exposed in the Swagger UI (most users are fine with the recipients parameter).
 	Message           string              `json:"message"`
@@ -266,10 +254,23 @@ type Api struct {
 }
 
 func NewApi(signalClient *client.SignalClient, store *storage.Store) *Api {
-	return &Api{
+	a := &Api{
 		signalClient: signalClient,
 		store:        store,
 	}
+	if store != nil {
+		signalClient.SetOnReceiveCallback(func(number string, msg client.JsonRpc2ReceivedMessage) {
+			rec, err := parseEnvelope(number, json.RawMessage(msg.Params))
+			if err != nil {
+				log.Warning("Storage: couldn't parse webhook message: ", err)
+				return
+			}
+			if err := store.SaveMessage(context.Background(), rec); err != nil {
+				log.Error("Storage: couldn't save webhook message: ", err)
+			}
+		})
+	}
+	return a
 }
 
 // parseEnvelope extracts key fields from a raw signal-cli envelope JSON object.
@@ -325,26 +326,6 @@ func parseEnvelope(account string, raw json.RawMessage) (storage.MessageRecord, 
 	return rec, nil
 }
 
-// persistEnvelopes parses the JSON array produced by client.Receive() and saves
-// each envelope to the store. Errors are logged but never propagated so that
-// storage failures never degrade the existing receive behavior.
-func persistEnvelopes(ctx context.Context, store *storage.Store, account string, jsonStr string) {
-	var rawItems []json.RawMessage
-	if err := json.Unmarshal([]byte(jsonStr), &rawItems); err != nil {
-		log.Warning("Storage: couldn't parse envelope array: ", err)
-		return
-	}
-	for _, raw := range rawItems {
-		rec, err := parseEnvelope(account, raw)
-		if err != nil {
-			log.Warning("Storage: couldn't parse envelope: ", err)
-			continue
-		}
-		if err := store.SaveMessage(ctx, rec); err != nil {
-			log.Error("Storage: couldn't save message: ", err)
-		}
-	}
-}
 
 // @Summary Lists general information about the API
 // @Tags General
@@ -365,7 +346,7 @@ func (a *Api) About(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param data body RegisterNumberRequest false "Additional Settings"
-// @Router /v1/register/{number} [post]
+// @Router /v1/accounts/{number}/register [post]
 func (a *Api) RegisterNumber(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -411,7 +392,7 @@ func (a *Api) RegisterNumber(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param data body UnregisterNumberRequest false "Additional Settings"
-// @Router /v1/unregister/{number} [post]
+// @Router /v1/accounts/{number} [delete]
 func (a *Api) UnregisterNumber(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -452,7 +433,7 @@ func (a *Api) UnregisterNumber(c *gin.Context) {
 // @Param data body DeleteLocalAccountDataRequest false "Cleanup options"
 // @Success 204
 // @Failure 400 {object} Error
-// @Router /v1/devices/{number}/local-data [delete]
+// @Router /v1/accounts/{number}/local-data [delete]
 func (a *Api) DeleteLocalAccountData(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -490,7 +471,7 @@ func (a *Api) DeleteLocalAccountData(c *gin.Context) {
 // @Param number path string true "Registered Phone Number"
 // @Param data body VerifyNumberSettings false "Additional Settings"
 // @Param token path string true "Verification Code"
-// @Router /v1/register/{number}/verify/{token} [post]
+// @Router /v1/accounts/{number}/register/verify/{token} [post]
 func (a *Api) VerifyRegisteredNumber(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -533,48 +514,23 @@ func (a *Api) VerifyRegisteredNumber(c *gin.Context) {
 
 // @Summary Send a signal message.
 // @Tags Messages
-// @Description Send a signal message
-// @Accept  json
-// @Produce  json
-// @Success 201 {string} string "OK"
-// @Failure 400 {object} Error
-// @Param data body SendMessageV1 true "Input Data"
-// @Router /v1/send [post]
-// @Deprecated
-func (a *Api) Send(c *gin.Context) {
-
-	var req SendMessageV1
-	err := c.BindJSON(&req)
-	if err != nil {
-		c.JSON(400, Error{Msg: "Couldn't process request - invalid request"})
-		return
-	}
-
-	base64Attachments := []string{}
-	if req.Base64Attachment != "" {
-		base64Attachments = append(base64Attachments, req.Base64Attachment)
-	}
-
-	timestamp, err := a.signalClient.SendV1(req.Number, req.Message, req.Recipients, base64Attachments, req.IsGroup)
-	if err != nil {
-		c.JSON(400, Error{Msg: err.Error()})
-		return
-	}
-	c.JSON(201, SendMessageResponse{Timestamp: strconv.FormatInt(timestamp.Timestamp, 10)})
-}
-
-// @Summary Send a signal message.
-// @Tags Messages
 // @Description Send a signal message. Set the text_mode to 'styled' in case you want to add formatting to your text message. Styling Options: \*italic text\*, \*\*bold text\*\*, ~strikethrough text~, ||spoiler||, \`monospace\`. If you want to escape a formatting character, prefix it with two backslashes.
 // @Accept  json
 // @Produce  json
 // @Success 201 {object} SendMessageResponse
 // @Failure 400 {object} SendMessageError
+// @Param number path string true "Registered Phone Number"
 // @Param data body SendMessageV2 true "Input Data"
-// @Router /v2/send [post]
-func (a *Api) SendV2(c *gin.Context) {
+// @Router /v1/accounts/{number}/messages [post]
+func (a *Api) Send(c *gin.Context) {
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil || number == "" {
+		c.JSON(400, gin.H{"error": "Couldn't process request - malformed number"})
+		return
+	}
+
 	var req SendMessageV2
-	err := c.BindJSON(&req)
+	err = c.BindJSON(&req)
 	if err != nil {
 		c.JSON(400, gin.H{"error": "Couldn't process request - invalid request"})
 		log.Error(err.Error())
@@ -590,11 +546,6 @@ func (a *Api) SendV2(c *gin.Context) {
 
 	if len(req.Recipients) == 0 {
 		c.JSON(400, gin.H{"error": "Couldn't process request - please provide at least one recipient"})
-		return
-	}
-
-	if req.Number == "" {
-		c.JSON(400, gin.H{"error": "Couldn't process request - please provide a valid number"})
 		return
 	}
 
@@ -618,7 +569,7 @@ func (a *Api) SendV2(c *gin.Context) {
 	}
 
 	data, err := a.signalClient.SendV2(
-		req.Number, req.Message, req.Recipients, req.Base64Attachments, req.Sticker,
+		number, req.Message, req.Recipients, req.Base64Attachments, req.Sticker,
 		req.Mentions, req.QuoteTimestamp, req.QuoteAuthor, req.QuoteMessage, req.QuoteMentions,
 		textMode, req.EditTimestamp, req.NotifySelf, req.LinkPreview, req.ViewOnce)
 	if err != nil {
@@ -626,7 +577,7 @@ func (a *Api) SendV2(c *gin.Context) {
 		case *client.RateLimitErrorType:
 			if rateLimitError, ok := err.(*client.RateLimitErrorType); ok {
 				extendedError := errors.New(err.Error() + ". Use the attached challenge tokens to lift the rate limit restrictions via the '/v1/accounts/{number}/rate-limit-challenge' endpoint.")
-				c.JSON(429, SendMessageError{Msg: extendedError.Error(), ChallengeTokens: rateLimitError.ChallengeTokens, Account: req.Number})
+				c.JSON(429, SendMessageError{Msg: extendedError.Error(), ChallengeTokens: rateLimitError.ChallengeTokens, Account: number})
 				return
 			} else {
 				c.JSON(400, Error{Msg: err.Error()})
@@ -636,8 +587,6 @@ func (a *Api) SendV2(c *gin.Context) {
 			c.JSON(400, Error{Msg: err.Error()})
 			return
 		}
-		c.JSON(400, Error{Msg: err.Error()})
-		return
 	}
 
 	c.JSON(201, SendMessageResponse{Timestamp: strconv.FormatInt((*data)[0].Timestamp, 10)})
@@ -757,102 +706,72 @@ func StringToBool(input string) bool {
 	return false
 }
 
-// @Summary Receive Signal Messages.
+// @Summary Stream Signal Messages via WebSocket.
 // @Tags Messages
-// @Description Receives Signal Messages from the Signal Network. If you are running the docker container in normal/native mode, this is a GET endpoint. In json-rpc mode this is a websocket endpoint.
-// @Accept  json
+// @Description Opens a WebSocket connection that streams incoming Signal messages in real-time as they are received by the daemon.
 // @Produce  json
 // @Success 200 {object} []string
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
-// @Param timeout query string false "Receive timeout in seconds (default: 1)"
-// @Param ignore_attachments query string false "Specify whether the attachments of the received message should be ignored" (default: false)"
-// @Param ignore_stories query string false "Specify whether stories should be ignored when receiving messages" (default: false)"
-// @Param ignore_avatars query string false "Specify whether avatar downloads should be ignored when receiving messages" (default: false)"
-// @Param ignore_stickers query string false "Specify whether sticker pack downloads should be ignored when receiving messages" (default: false)"
-// @Param max_messages query string false "Specify the maximum number of messages to receive (default: unlimited)". Not available in json-rpc mode.
-// @Param send_read_receipts query string false "Specify whether read receipts should be sent when receiving messages" (default: false)"
-// @Router /v1/receive/{number} [get]
-func (a *Api) Receive(c *gin.Context) {
+// @Router /v1/accounts/{number}/messages/stream [get]
+func (a *Api) StreamMessages(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
-	if err != nil {
+	if err != nil || number == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
 		return
 	}
 
-	if a.signalClient.GetSignalCliMode() == client.JsonRpc {
-		ws, err := connectionUpgrader.Upgrade(c.Writer, c.Request, nil)
-		if err != nil {
-			c.JSON(400, Error{Msg: err.Error()})
-			return
-		}
-		defer ws.Close()
-		var stop = make(chan struct{})
-		go a.handleSignalReceive(ws, number, stop)
-		go a.wsPing(ws, stop)
-		wsPong(ws, stop)
-	} else {
-		timeout := c.DefaultQuery("timeout", "1")
-		timeoutInt, err := strconv.ParseInt(timeout, 10, 32)
-		if err != nil {
-			c.JSON(400, Error{Msg: "Couldn't process request - timeout needs to be numeric!"})
-			return
-		}
-
-		maxMessages := c.DefaultQuery("max_messages", "0")
-		maxMessagesInt, err := strconv.ParseInt(maxMessages, 10, 32)
-		if err != nil {
-			c.JSON(400, Error{Msg: "Couldn't process request - max_messages needs to be numeric!"})
-			return
-		}
-
-		ignoreAttachments := c.DefaultQuery("ignore_attachments", "false")
-		if ignoreAttachments != "true" && ignoreAttachments != "false" {
-			c.JSON(400, Error{Msg: "Couldn't process request - ignore_attachments parameter needs to be either 'true' or 'false'"})
-			return
-		}
-
-		ignoreStories := c.DefaultQuery("ignore_stories", "false")
-		if ignoreStories != "true" && ignoreStories != "false" {
-			c.JSON(400, Error{Msg: "Couldn't process request - ignore_stories parameter needs to be either 'true' or 'false'"})
-			return
-		}
-
-		ignoreAvatars := c.DefaultQuery("ignore_avatars", "false")
-		if ignoreAvatars != "true" && ignoreAvatars != "false" {
-			c.JSON(400, Error{Msg: "Couldn't process request - ignore_avatars parameter needs to be either 'true' or 'false'"})
-			return
-		}
-
-		ignoreStickers := c.DefaultQuery("ignore_stickers", "false")
-		if ignoreStickers != "true" && ignoreStickers != "false" {
-			c.JSON(400, Error{Msg: "Couldn't process request - ignore_stickers parameter needs to be either 'true' or 'false'"})
-			return
-		}
-
-		sendReadReceipts := c.DefaultQuery("send_read_receipts", "false")
-		if sendReadReceipts != "true" && sendReadReceipts != "false" {
-			c.JSON(400, Error{Msg: "Couldn't process request - send_read_receipts parameter needs to be either 'true' or 'false'"})
-			return
-		}
-
-		jsonStr, err := a.signalClient.Receive(number, timeoutInt, StringToBool(ignoreAttachments), StringToBool(ignoreStories), StringToBool(ignoreAvatars), StringToBool(ignoreStickers), maxMessagesInt, StringToBool(sendReadReceipts))
-		if err != nil {
-			c.JSON(400, Error{Msg: err.Error()})
-			return
-		}
-
-		if a.store != nil {
-			persistEnvelopes(c.Request.Context(), a.store, number, jsonStr)
-		}
-
-		c.String(200, jsonStr)
+	ws, err := connectionUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		c.JSON(400, Error{Msg: err.Error()})
+		return
 	}
+	defer ws.Close()
+	var stop = make(chan struct{})
+	go a.handleSignalReceive(ws, number, stop)
+	go a.wsPing(ws, stop)
+	wsPong(ws, stop)
 }
 
-// @Summary Get stored Signal messages.
+// @Summary Poll unread Signal messages.
 // @Tags Messages
-// @Description Returns previously received Signal messages stored in the database.
+// @Description Returns all unread Signal messages for the account and marks them as retrieved. Messages are never deleted — use GET /v1/accounts/{number}/messages/history to query the full archive.
+// @Description Only available when DATABASE_URL is configured.
+// @Produce  json
+// @Success 200 {array} storage.StoredMessage
+// @Failure 400 {object} Error
+// @Failure 503 {object} Error
+// @Param number path string true "Registered Phone Number"
+// @Router /v1/accounts/{number}/messages [get]
+func (a *Api) PollMessages(c *gin.Context) {
+	if a.store == nil {
+		c.JSON(503, Error{Msg: "Message storage is not configured (DATABASE_URL not set)"})
+		return
+	}
+
+	number, err := url.PathUnescape(c.Param("number"))
+	if err != nil || number == "" {
+		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
+		return
+	}
+
+	messages, err := a.store.GetAndMarkRetrieved(c.Request.Context(), number)
+	if err != nil {
+		log.Error("Storage: GetAndMarkRetrieved failed: ", err)
+		c.JSON(500, Error{Msg: "Internal error retrieving messages"})
+		return
+	}
+
+	if messages == nil {
+		messages = []storage.StoredMessage{}
+	}
+
+	c.JSON(200, messages)
+}
+
+// @Summary Get stored Signal messages (history).
+// @Tags Messages
+// @Description Returns Signal messages stored in the database, including already-retrieved messages. Supports filtering and pagination.
 // @Description Only available when DATABASE_URL is configured.
 // @Produce  json
 // @Success 200 {array} storage.StoredMessage
@@ -864,9 +783,10 @@ func (a *Api) Receive(c *gin.Context) {
 // @Param start_time query integer false "Filter by minimum timestamp (milliseconds since epoch)"
 // @Param end_time query integer false "Filter by maximum timestamp (milliseconds since epoch)"
 // @Param envelope_type query string false "Comma-separated envelope types to include (default: dataMessage)"
+// @Param retrieved query boolean false "Filter by retrieved flag (omit for all, true/false to filter)"
 // @Param limit query integer false "Maximum number of results (default: 100, max: 1000)"
 // @Param offset query integer false "Results offset for pagination (default: 0)"
-// @Router /v1/messages/{number} [get]
+// @Router /v1/accounts/{number}/messages/history [get]
 func (a *Api) GetMessages(c *gin.Context) {
 	if a.store == nil {
 		c.JSON(503, Error{Msg: "Message storage is not configured (DATABASE_URL not set)"})
@@ -902,6 +822,10 @@ func (a *Api) GetMessages(c *gin.Context) {
 			return
 		}
 		filter.EndTime = &ts
+	}
+	if v := c.Query("retrieved"); v != "" {
+		b := v == "true"
+		filter.Retrieved = &b
 	}
 	if v := c.Query("limit"); v != "" {
 		n, err := strconv.Atoi(v)
@@ -943,7 +867,7 @@ func (a *Api) GetMessages(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param data body CreateGroupRequest true "Input Data"
 // @Param number path string true "Registered Phone Number"
-// @Router /v1/groups/{number} [post]
+// @Router /v1/accounts/{number}/groups [post]
 func (a *Api) CreateGroup(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1016,7 +940,7 @@ func (a *Api) CreateGroup(c *gin.Context) {
 // @Param data body ChangeGroupMembersRequest true "Members"
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group ID"
-// @Router /v1/groups/{number}/{groupid}/members [post]
+// @Router /v1/accounts/{number}/groups/{groupId}/members [post]
 func (a *Api) AddMembersToGroup(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1028,7 +952,7 @@ func (a *Api) AddMembersToGroup(c *gin.Context) {
 		return
 	}
 
-	groupId := c.Param("groupid")
+	groupId := c.Param("groupId")
 	if groupId == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - group id missing"})
 		return
@@ -1065,7 +989,7 @@ func (a *Api) AddMembersToGroup(c *gin.Context) {
 // @Param data body ChangeGroupMembersRequest true "Members"
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group ID"
-// @Router /v1/groups/{number}/{groupid}/members [delete]
+// @Router /v1/accounts/{number}/groups/{groupId}/members [delete]
 func (a *Api) RemoveMembersFromGroup(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1077,7 +1001,7 @@ func (a *Api) RemoveMembersFromGroup(c *gin.Context) {
 		return
 	}
 
-	groupId := c.Param("groupid")
+	groupId := c.Param("groupId")
 	if groupId == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - group id missing"})
 		return
@@ -1114,7 +1038,7 @@ func (a *Api) RemoveMembersFromGroup(c *gin.Context) {
 // @Param data body ChangeGroupAdminsRequest true "Admins"
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group ID"
-// @Router /v1/groups/{number}/{groupid}/admins [post]
+// @Router /v1/accounts/{number}/groups/{groupId}/admins [post]
 func (a *Api) AddAdminsToGroup(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1126,7 +1050,7 @@ func (a *Api) AddAdminsToGroup(c *gin.Context) {
 		return
 	}
 
-	groupId := c.Param("groupid")
+	groupId := c.Param("groupId")
 	if groupId == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - group id missing"})
 		return
@@ -1163,7 +1087,7 @@ func (a *Api) AddAdminsToGroup(c *gin.Context) {
 // @Param data body ChangeGroupAdminsRequest true "Admins"
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group ID"
-// @Router /v1/groups/{number}/{groupid}/admins [delete]
+// @Router /v1/accounts/{number}/groups/{groupId}/admins [delete]
 func (a *Api) RemoveAdminsFromGroup(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1175,7 +1099,7 @@ func (a *Api) RemoveAdminsFromGroup(c *gin.Context) {
 		return
 	}
 
-	groupId := c.Param("groupid")
+	groupId := c.Param("groupId")
 	if groupId == "" {
 		c.JSON(400, Error{Msg: "Couldn't process request - group id missing"})
 		return
@@ -1211,7 +1135,7 @@ func (a *Api) RemoveAdminsFromGroup(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param expand query bool false "Expand the response to show more details (default: false)"
-// @Router /v1/groups/{number} [get]
+// @Router /v1/accounts/{number}/groups [get]
 func (a *Api) GetGroups(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1252,14 +1176,14 @@ func (a *Api) GetGroups(c *gin.Context) {
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group ID"
 // @Param expand query bool false "Expand the response to show more details (default: false)"
-// @Router /v1/groups/{number}/{groupid} [get]
+// @Router /v1/accounts/{number}/groups/{groupId} [get]
 func (a *Api) GetGroup(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
 		return
 	}
-	groupId := c.Param("groupid")
+	groupId := c.Param("groupId")
 
 	expand := c.DefaultQuery("expand", "false")
 	if expand != "true" && expand != "false" {
@@ -1298,14 +1222,14 @@ func (a *Api) GetGroup(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group ID"
-// @Router /v1/groups/{number}/{groupid}/avatar [get]
+// @Router /v1/accounts/{number}/groups/{groupId}/avatar [get]
 func (a *Api) GetGroupAvatar(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
 		return
 	}
-	groupId := c.Param("groupid")
+	groupId := c.Param("groupId")
 
 	groupAvatar, err := a.signalClient.GetAvatar(number, groupId, client.GroupAvatar)
 	if err != nil {
@@ -1332,9 +1256,9 @@ func (a *Api) GetGroupAvatar(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group Id"
-// @Router /v1/groups/{number}/{groupid} [delete]
+// @Router /v1/accounts/{number}/groups/{groupId} [delete]
 func (a *Api) DeleteGroup(c *gin.Context) {
-	base64EncodedGroupId := c.Param("groupid")
+	base64EncodedGroupId := c.Param("groupId")
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
@@ -1369,9 +1293,9 @@ func (a *Api) DeleteGroup(c *gin.Context) {
 // @Param data body PinMessageInGroupRequest true "Pin"
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group Id"
-// @Router /v1/groups/{number}/{groupid}/pin-message [post]
+// @Router /v1/accounts/{number}/groups/{groupId}/pinned-message [post]
 func (a *Api) PinMessageInGroup(c *gin.Context) {
-	base64EncodedGroupId := c.Param("groupid")
+	base64EncodedGroupId := c.Param("groupId")
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
@@ -1420,9 +1344,9 @@ func (a *Api) PinMessageInGroup(c *gin.Context) {
 // @Param data body UnpinMessageInGroupRequest true "Unpin"
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group Id"
-// @Router /v1/groups/{number}/{groupid}/pin-message [delete]
+// @Router /v1/accounts/{number}/groups/{groupId}/pinned-message [delete]
 func (a *Api) UnpinMessageInGroup(c *gin.Context) {
-	base64EncodedGroupId := c.Param("groupid")
+	base64EncodedGroupId := c.Param("groupId")
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
 		c.JSON(400, Error{Msg: "Couldn't process request - malformed number"})
@@ -1464,7 +1388,7 @@ func (a *Api) UnpinMessageInGroup(c *gin.Context) {
 // @Param device_name query string true "Device Name"
 // @Param qrcode_version query int false "QRCode Version (defaults to 10)"
 // @Failure 400 {object} Error
-// @Router /v1/qrcodelink [get]
+// @Router /v1/accounts/{number}/qr-code [get]
 func (a *Api) GetQrCodeLink(c *gin.Context) {
 	deviceName := c.Query("device_name")
 	qrCodeVersion := c.Query("qrcode_version")
@@ -1500,7 +1424,7 @@ func (a *Api) GetQrCodeLink(c *gin.Context) {
 // @Param device_name query string true "Device Name"
 // @Success 200 {object} DeviceLinkUriResponse
 // @Failure 400 {object} Error
-// @Router /v1/qrcodelink/raw [get]
+// @Router /v1/accounts/{number}/qr-code/raw [get]
 func (a *Api) GetQrCodeLinkUri(c *gin.Context) {
 	deviceName := c.Query("device_name")
 	if deviceName == "" {
@@ -1558,7 +1482,7 @@ func (a *Api) GetAttachments(c *gin.Context) {
 // @Success 204 {string} OK
 // @Failure 400 {object} Error
 // @Param attachment path string true "Attachment ID"
-// @Router /v1/attachments/{attachment} [delete]
+// @Router /v1/attachments/{id} [delete]
 func (a *Api) RemoveAttachment(c *gin.Context) {
 	attachment := c.Param("attachment")
 
@@ -1590,7 +1514,7 @@ func (a *Api) RemoveAttachment(c *gin.Context) {
 // @Success 200 {string} OK
 // @Failure 400 {object} Error
 // @Param attachment path string true "Attachment ID"
-// @Router /v1/attachments/{attachment} [get]
+// @Router /v1/attachments/{id} [get]
 func (a *Api) ServeAttachment(c *gin.Context) {
 	attachment := c.Param("attachment")
 
@@ -1635,7 +1559,7 @@ func (a *Api) ServeAttachment(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param data body UpdateProfileRequest true "Profile Data"
 // @Param number path string true "Registered Phone Number"
-// @Router /v1/profiles/{number} [put]
+// @Router /v1/accounts/{number}/profile [put]
 func (a *Api) UpdateProfile(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1686,7 +1610,7 @@ func (a *Api) Health(c *gin.Context) {
 // @Produce  json
 // @Success 200 {object} []client.IdentityEntry
 // @Param number path string true "Registered Phone Number"
-// @Router /v1/identities/{number} [get]
+// @Router /v1/accounts/{number}/identities [get]
 func (a *Api) ListIdentities(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1716,7 +1640,7 @@ func (a *Api) ListIdentities(c *gin.Context) {
 // @Param data body TrustIdentityRequest true "Input Data"
 // @Param number path string true "Registered Phone Number"
 // @Param numberToTrust path string true "Number To Trust"
-// @Router /v1/identities/{number}/trust/{numberToTrust} [put]
+// @Router /v1/accounts/{number}/identities/{id}/trust [put]
 func (a *Api) TrustIdentity(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1729,9 +1653,9 @@ func (a *Api) TrustIdentity(c *gin.Context) {
 		return
 	}
 
-	numberToTrust := c.Param("numbertotrust")
-	if numberToTrust == "" {
-		c.JSON(400, Error{Msg: "Couldn't process request - number to trust missing"})
+	idToTrust := c.Param("id")
+	if idToTrust == "" {
+		c.JSON(400, Error{Msg: "Couldn't process request - identity id missing"})
 		return
 	}
 
@@ -1758,7 +1682,7 @@ func (a *Api) TrustIdentity(c *gin.Context) {
 		return
 	}
 
-	err = a.signalClient.TrustIdentity(number, numberToTrust, req.VerifiedSafetyNumber, req.TrustAllKnownKeys)
+	err = a.signalClient.TrustIdentity(number, idToTrust, req.VerifiedSafetyNumber, req.TrustAllKnownKeys)
 	if err != nil {
 		c.JSON(400, Error{Msg: err.Error()})
 		return
@@ -1826,7 +1750,7 @@ func (a *Api) GetConfiguration(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group ID"
-// @Router /v1/groups/{number}/{groupid}/block [post]
+// @Router /v1/accounts/{number}/groups/{groupId}/block [post]
 func (a *Api) BlockGroup(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1838,7 +1762,7 @@ func (a *Api) BlockGroup(c *gin.Context) {
 		return
 	}
 
-	groupId := c.Param("groupid")
+	groupId := c.Param("groupId")
 	internalGroupId, err := client.ConvertGroupIdToInternalGroupId(groupId)
 	if err != nil {
 		c.JSON(400, Error{Msg: err.Error()})
@@ -1863,7 +1787,7 @@ func (a *Api) BlockGroup(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group ID"
-// @Router /v1/groups/{number}/{groupid}/join [post]
+// @Router /v1/accounts/{number}/groups/{groupId}/join [post]
 func (a *Api) JoinGroup(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1875,7 +1799,7 @@ func (a *Api) JoinGroup(c *gin.Context) {
 		return
 	}
 
-	groupId := c.Param("groupid")
+	groupId := c.Param("groupId")
 	internalGroupId, err := client.ConvertGroupIdToInternalGroupId(groupId)
 	if err != nil {
 		c.JSON(400, Error{Msg: err.Error()})
@@ -1900,7 +1824,7 @@ func (a *Api) JoinGroup(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group ID"
-// @Router /v1/groups/{number}/{groupid}/quit [post]
+// @Router /v1/accounts/{number}/groups/{groupId}/quit [post]
 func (a *Api) QuitGroup(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1912,7 +1836,7 @@ func (a *Api) QuitGroup(c *gin.Context) {
 		return
 	}
 
-	groupId := c.Param("groupid")
+	groupId := c.Param("groupId")
 	internalGroupId, err := client.ConvertGroupIdToInternalGroupId(groupId)
 	if err != nil {
 		c.JSON(400, Error{Msg: err.Error()})
@@ -1937,7 +1861,7 @@ func (a *Api) QuitGroup(c *gin.Context) {
 // @Param number path string true "Registered Phone Number"
 // @Param groupid path string true "Group ID"
 // @Param data body UpdateGroupRequest true "Input Data"
-// @Router /v1/groups/{number}/{groupid} [put]
+// @Router /v1/accounts/{number}/groups/{groupId} [put]
 func (a *Api) UpdateGroup(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -1949,7 +1873,7 @@ func (a *Api) UpdateGroup(c *gin.Context) {
 		return
 	}
 
-	groupId := c.Param("groupid")
+	groupId := c.Param("groupId")
 	internalGroupId, err := client.ConvertGroupIdToInternalGroupId(groupId)
 	if err != nil {
 		c.JSON(400, Error{Msg: err.Error()})
@@ -2024,7 +1948,7 @@ func (a *Api) UpdateGroup(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param data body Reaction true "Reaction"
 // @Param number path string true "Registered phone number"
-// @Router /v1/reactions/{number} [post]
+// @Router /v1/accounts/{number}/reactions [post]
 func (a *Api) SendReaction(c *gin.Context) {
 	var req Reaction
 	err := c.BindJSON(&req)
@@ -2077,7 +2001,7 @@ func (a *Api) SendReaction(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param data body Reaction true "Reaction"
 // @Param number path string true "Registered phone number"
-// @Router /v1/reactions/{number} [delete]
+// @Router /v1/accounts/{number}/reactions [delete]
 func (a *Api) RemoveReaction(c *gin.Context) {
 	var req Reaction
 	err := c.BindJSON(&req)
@@ -2125,7 +2049,7 @@ func (a *Api) RemoveReaction(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param data body Receipt true "Receipt"
 // @Param number path string true "Registered phone number"
-// @Router /v1/receipts/{number} [post]
+// @Router /v1/accounts/{number}/receipts [post]
 func (a *Api) SendReceipt(c *gin.Context) {
 	var req Receipt
 	err := c.BindJSON(&req)
@@ -2179,7 +2103,7 @@ func (a *Api) SendReceipt(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param data body TypingIndicatorRequest true "Type"
-// @Router /v1/typing-indicator/{number} [put]
+// @Router /v1/accounts/{number}/typing [post]
 func (a *Api) SendStartTyping(c *gin.Context) {
 	var req TypingIndicatorRequest
 	err := c.BindJSON(&req)
@@ -2216,7 +2140,7 @@ func (a *Api) SendStartTyping(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param data body TypingIndicatorRequest true "Type"
-// @Router /v1/typing-indicator/{number} [delete]
+// @Router /v1/accounts/{number}/typing [delete]
 func (a *Api) SendStopTyping(c *gin.Context) {
 	var req TypingIndicatorRequest
 	err := c.BindJSON(&req)
@@ -2253,7 +2177,7 @@ func (a *Api) SendStopTyping(c *gin.Context) {
 // @Param numbers query []string true "Numbers to check" collectionFormat(multi)
 // @Success 200 {object} []SearchResponse
 // @Failure 400 {object} Error
-// @Router /v1/search/{number} [get]
+// @Router /v1/search [get]
 func (a *Api) SearchForNumbers(c *gin.Context) {
 	query := c.Request.URL.Query()
 	if _, ok := query["numbers"]; !ok {
@@ -2291,7 +2215,7 @@ func (a *Api) SearchForNumbers(c *gin.Context) {
 // @Success 204
 // @Param data body UpdateContactRequest true "Contact"
 // @Failure 400 {object} Error
-// @Router /v1/contacts/{number} [put]
+// @Router /v1/accounts/{number}/contacts [put]
 func (a *Api) UpdateContact(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2332,7 +2256,7 @@ func (a *Api) UpdateContact(c *gin.Context) {
 // @Success 204
 // @Param data body AddDeviceRequest true "Request"
 // @Failure 400 {object} Error
-// @Router /v1/devices/{number} [post]
+// @Router /v1/accounts/{number}/devices [post]
 func (a *Api) AddDevice(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2367,7 +2291,7 @@ func (a *Api) AddDevice(c *gin.Context) {
 // @Param number path string true "Registered Phone Number"
 // @Success 200 {object} []client.ListDevicesResponse
 // @Failure 400 {object} Error
-// @Router /v1/devices/{number} [get]
+// @Router /v1/accounts/{number}/devices [get]
 func (a *Api) ListDevices(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2395,7 +2319,7 @@ func (a *Api) ListDevices(c *gin.Context) {
 // @Param deviceId path int true "Device ID from listDevices"
 // @Success 204
 // @Failure 400 {object} Error
-// @Router /v1/devices/{number}/{deviceId} [delete]
+// @Router /v1/accounts/{number}/devices/{deviceId} [delete]
 func (a *Api) RemoveDevice(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2431,7 +2355,7 @@ func (a *Api) RemoveDevice(c *gin.Context) {
 // @Success 204
 // @Param data body TrustModeRequest true "Request"
 // @Failure 400 {object} Error
-// @Router /v1/configuration/{number}/settings [post]
+// @Router /v1/accounts/{number}/trust-mode [put]
 func (a *Api) SetTrustMode(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2474,7 +2398,7 @@ func (a *Api) SetTrustMode(c *gin.Context) {
 // @Success 200
 // @Param data body TrustModeResponse true "Request"
 // @Failure 400 {object} Error
-// @Router /v1/configuration/{number}/settings [get]
+// @Router /v1/accounts/{number}/trust-mode [get]
 func (a *Api) GetTrustMode(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2505,7 +2429,7 @@ func (a *Api) GetTrustMode(c *gin.Context) {
 // @Param number path string true "Registered Phone Number"
 // @Success 204
 // @Failure 400 {object} Error
-// @Router /v1/contacts/{number}/sync [post]
+// @Router /v1/accounts/{number}/contacts/sync [post]
 func (a *Api) SendContacts(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2672,7 +2596,7 @@ func (a *Api) RemoveUsername(c *gin.Context) {
 // @Success 204
 // @Failure 400 {object} Error
 // @Success 200 {object} []client.ListInstalledStickerPacksResponse
-// @Router /v1/sticker-packs/{number} [get]
+// @Router /v1/accounts/{number}/sticker-packs [get]
 func (a *Api) ListInstalledStickerPacks(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2702,7 +2626,7 @@ func (a *Api) ListInstalledStickerPacks(c *gin.Context) {
 // @Success 204
 // @Failure 400 {object} Error
 // @Param data body AddStickerPackRequest true "Request"
-// @Router /v1/sticker-packs/{number} [post]
+// @Router /v1/accounts/{number}/sticker-packs [post]
 func (a *Api) AddStickerPack(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2737,7 +2661,7 @@ func (a *Api) AddStickerPack(c *gin.Context) {
 // @Success 200 {object} []client.ListContactsResponse
 // @Param number path string true "Registered Phone Number"
 // @Param all_recipients query string false "Include all known recipients, not only contacts." (default: false)"
-// @Router /v1/contacts/{number} [get]
+// @Router /v1/accounts/{number}/contacts [get]
 func (a *Api) ListContacts(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2771,7 +2695,7 @@ func (a *Api) ListContacts(c *gin.Context) {
 // @Success 200 {object} client.ListContactsResponse
 // @Param number path string true "Registered Phone Number"
 // @Param all_recipients query string false "Include all known recipients, not only contacts." (default: false)"
-// @Router /v1/contacts/{number}/{uuid} [get]
+// @Router /v1/accounts/{number}/contacts/{uuid} [get]
 func (a *Api) ListContact(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2817,7 +2741,7 @@ func (a *Api) ListContact(c *gin.Context) {
 // @Produce  json
 // @Success 200 {string} string	"Image"
 // @Param number path string true "Registered Phone Number"
-// @Router /v1/contacts/{number}/{uuid}/avatar [get]
+// @Router /v1/accounts/{number}/contacts/{uuid}/avatar [get]
 func (a *Api) GetProfileAvatar(c *gin.Context) {
 	number, err := url.PathUnescape(c.Param("number"))
 	if err != nil {
@@ -2921,7 +2845,7 @@ func (a *Api) RemovePin(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param data body RemoteDeleteRequest true "Type"
-// @Router /v1/remote-delete/{number} [delete]
+// @Router /v1/accounts/{number}/messages/remote-delete [post]
 func (a *Api) RemoteDelete(c *gin.Context) {
 	var req RemoteDeleteRequest
 	err := c.BindJSON(&req)
@@ -2958,7 +2882,7 @@ func (a *Api) RemoteDelete(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param data body CreatePollRequest true "Type"
-// @Router /v1/polls/{number} [post]
+// @Router /v1/accounts/{number}/polls [post]
 func (a *Api) CreatePoll(c *gin.Context) {
 	var req CreatePollRequest
 	err := c.BindJSON(&req)
@@ -3014,7 +2938,7 @@ func (a *Api) CreatePoll(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param data body VoteRequest true "Type"
-// @Router /v1/polls/{number}/vote [post]
+// @Router /v1/accounts/{number}/polls/vote [post]
 func (a *Api) VoteInPoll(c *gin.Context) {
 	var req VoteRequest
 	err := c.BindJSON(&req)
@@ -3084,7 +3008,7 @@ func (a *Api) VoteInPoll(c *gin.Context) {
 // @Failure 400 {object} Error
 // @Param number path string true "Registered Phone Number"
 // @Param data body ClosePollRequest true "Type"
-// @Router /v1/polls/{number} [delete]
+// @Router /v1/accounts/{number}/polls [delete]
 func (a *Api) ClosePoll(c *gin.Context) {
 	var req ClosePollRequest
 	err := c.BindJSON(&req)

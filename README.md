@@ -1,56 +1,62 @@
-# Dockerized Signal Messenger REST API
+# Signal CLI REST API
 
-> **This is a fork of [bbernhard/signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) with the following additions:**
-> - **PostgreSQL message storage** — received messages are optionally persisted to a PostgreSQL database and can be queried via `GET /v1/messages/{number}`. Enable by setting the `DATABASE_URL` environment variable.
-> - **GitHub Container Registry** — Docker images are published to `ghcr.io/strenkml/signal-cli-rest-api` instead of Docker Hub.
+> **This is a fork of [bbernhard/signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) with significant changes:**
+> - **Runs exclusively in json-rpc-native mode** — no JVM, no MODE env var, single fast execution path
+> - **Redesigned API** — all account-specific routes live under `/v1/accounts/{number}/...`
+> - **Message polling** — `GET /v1/accounts/{number}/messages` returns unread messages from the DB and marks them retrieved
+> - **WebSocket stream** — `GET /v1/accounts/{number}/messages/stream` streams live messages
+> - **PostgreSQL message storage** — received messages are persisted to PostgreSQL and queryable via `GET /v1/accounts/{number}/messages/history`
+> - **GitHub Container Registry** — Docker images published to `ghcr.io/strenkml/signal-cli-rest-api`
 
 ---
 
-This project creates a small dockerized REST API around [signal-cli](https://github.com/AsamK/signal-cli).
+This project wraps [signal-cli](https://github.com/AsamK/signal-cli) in a REST API running inside Docker.
 
-At the moment, the following functionality is exposed via REST:
+## Getting Started
 
-- Register a number
-- Verify the number using the code received via SMS
-- Send message (+ attachments) to multiple recipients (or a group)
-- Receive messages
-- Link devices
-- Create/List/Remove groups
-- List/Serve/Delete attachments
-- Update profile
+### 1. Start a container
 
-and [many more](https://bbernhard.github.io/signal-cli-rest-api/)
-
-## Message Storage
-
-When `DATABASE_URL` is set, every received Signal message is automatically persisted to PostgreSQL. The table and indexes are created automatically on startup — no migrations needed.
-
-### Querying stored messages
-
-```
-GET /v1/messages/{number}
+```bash
+docker run -d --name signal-api --restart=always -p 8080:8080 \
+  -v $HOME/.local/share/signal-api:/home/.local/share/signal-cli \
+  ghcr.io/strenkml/signal-cli-rest-api:latest
 ```
 
-| Parameter | Description | Default |
-|---|---|---|
-| `sender` | Filter by sender phone number | — |
-| `group_id` | Filter by group ID | — |
-| `start_time` | Minimum timestamp (ms since epoch) | — |
-| `end_time` | Maximum timestamp (ms since epoch) | — |
-| `envelope_type` | Comma-separated types to include | `dataMessage` |
-| `limit` | Max results (hard cap: 1000) | `100` |
-| `offset` | Pagination offset | `0` |
+### 2. Link your Signal number
 
-Returns `503` when `DATABASE_URL` is not set.
+Open `http://localhost:8080/v1/accounts/{number}/qr-code?device_name=signal-api` in your browser, then scan the QR code in Signal on your phone under _Settings → Linked devices_.
 
-### Docker Compose example with storage enabled
+### 3. Send a test message
+
+```bash
+curl -X POST -H "Content-Type: application/json" \
+  'http://localhost:8080/v1/accounts/+441234567890/messages' \
+  -d '{"message": "Hello from the API!", "recipients": ["+449876543210"]}'
+```
+
+---
+
+## Docker Compose
+
+### Basic
+
+```yaml
+services:
+  signal-cli-rest-api:
+    image: ghcr.io/strenkml/signal-cli-rest-api:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - "./signal-cli-config:/home/.local/share/signal-cli"
+```
+
+### With PostgreSQL message storage
 
 ```yaml
 services:
   signal-cli-rest-api:
     image: ghcr.io/strenkml/signal-cli-rest-api:latest
     environment:
-      - MODE=normal
       - DATABASE_URL=postgres://user:password@db:5432/signal
     ports:
       - "8080:8080"
@@ -69,148 +75,120 @@ services:
 
 ---
 
+## API Overview
 
-## Getting started
+All account-specific endpoints are under `/v1/accounts/{number}/...`. The `{number}` is your registered Signal number in international format (e.g. `+441234567890`).
 
-1. Create a directory for the configuration
-This allows you to update `signal-cli-rest-api` by just deleting and recreating the container without the need to re-register your signal number
+### Messages
 
-```bash
-$ mkdir -p $HOME/.local/share/signal-api
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/accounts/{number}/messages` | Send a message |
+| `GET` | `/v1/accounts/{number}/messages` | Poll unread messages (marks them retrieved) |
+| `GET` | `/v1/accounts/{number}/messages/stream` | WebSocket stream of live messages |
+| `GET` | `/v1/accounts/{number}/messages/history` | Query full message archive |
+| `POST` | `/v1/accounts/{number}/messages/remote-delete` | Remote-delete a sent message |
+
+### Registration & Devices
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/accounts/{number}/register` | Register a phone number |
+| `POST` | `/v1/accounts/{number}/register/verify/{token}` | Verify registration |
+| `DELETE` | `/v1/accounts/{number}` | Unregister a number |
+| `GET` | `/v1/accounts/{number}/qr-code` | QR code PNG for device linking |
+| `GET` | `/v1/accounts/{number}/qr-code/raw` | Raw device link URI |
+| `GET` | `/v1/accounts/{number}/devices` | List linked devices |
+| `POST` | `/v1/accounts/{number}/devices` | Link a device by URI |
+| `DELETE` | `/v1/accounts/{number}/devices/{deviceId}` | Remove a linked device |
+| `DELETE` | `/v1/accounts/{number}/local-data` | Delete local account data |
+
+### Groups, Contacts, Identities
+
+Standard CRUD operations under `/v1/accounts/{number}/groups`, `/v1/accounts/{number}/contacts`, and `/v1/accounts/{number}/identities`. See the Swagger UI for full details.
+
+### Other
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/v1/accounts` | List all registered accounts |
+| `GET` | `/v1/about` | API version info |
+| `GET` | `/v1/health` | Health check |
+| `GET` | `/v1/attachments` | List attachments |
+| `GET` | `/v1/attachments/{id}` | Serve an attachment |
+| `DELETE` | `/v1/attachments/{id}` | Delete an attachment |
+| `GET` | `/v1/search` | Search for registered numbers |
+| `GET/POST` | `/v1/configuration` | Get/set API logging configuration |
+
+Full interactive docs are available at `http://localhost:8080/swagger/index.html`.
+
+---
+
+## Message Storage
+
+When `DATABASE_URL` is set, every received Signal message is automatically saved to PostgreSQL. The schema is created on startup — no migrations needed.
+
+### Polling unread messages
+
+```
+GET /v1/accounts/{number}/messages
 ```
 
+Returns all messages that have not yet been retrieved and marks them as retrieved. Messages are **never deleted** from the database — use the `history` endpoint to query the full archive.
 
-2. Start a container
+Returns `503` when `DATABASE_URL` is not set.
 
-```bash
-$ sudo docker run -d --name signal-api --restart=always -p 8080:8080 \
-      -v $HOME/.local/share/signal-api:/home/.local/share/signal-cli \
-      -e 'MODE=native' ghcr.io/strenkml/signal-cli-rest-api
+### Querying message history
+
+```
+GET /v1/accounts/{number}/messages/history
 ```
 
-3. Register or Link your Signal Number
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `sender` | Filter by sender phone number | — |
+| `group_id` | Filter by group ID | — |
+| `start_time` | Minimum timestamp (ms since epoch) | — |
+| `end_time` | Maximum timestamp (ms since epoch) | — |
+| `envelope_type` | Comma-separated types to include | `dataMessage` |
+| `retrieved` | Filter by retrieved flag (`true`/`false`) | all |
+| `limit` | Max results (hard cap: 1000) | `100` |
+| `offset` | Pagination offset | `0` |
 
-In this case we'll register our container as secondary device, assuming that you already have your primary number running / assigned to your mobile.
+### WebSocket stream
 
-Therefore open http://localhost:8080/v1/qrcodelink?device_name=signal-api in your browser, open Signal on your mobile phone, go to _Settings > Linked devices_ and scan the QR code using the _+_ button.
-
-4. Test your new REST API
-
-Call the REST API endpoint and send a test message: Replace `+4412345` with your signal number in international number format, and `+44987654` with the recipients number.
-
-```bash
-$ curl -X POST -H "Content-Type: application/json" 'http://localhost:8080/v2/send' \
-     -d '{"message": "Test via Signal API!", "number": "+4412345", "recipients": [ "+44987654" ]}'
+```
+GET /v1/accounts/{number}/messages/stream
 ```
 
-You should now have send a message to `+44987654`.
+Upgrade to WebSocket to receive messages in real-time as they arrive. Does not require `DATABASE_URL`.
 
-## Execution Modes
+---
 
-The `signal-cli-rest-api` supports three different modes of execution, which can be controlled by setting the `MODE` environment variable.
+## Environment Variables
 
-* **`normal` Mode: (Default)** The `signal-cli` executable is invoked for every REST API request. Being a Java application, each REST call requires a new startup of the JVM (Java Virtual Machine), increasing the latency and hence leading to the slowest mode of operation.
-* **`native` Mode:** A precompiled binary `signal-cli-native` (using GraalVM) is used for every REST API request. This results in a much lower latency & memory usage on each call. On the `armv7` platform this mode is not available and falls back to `normal`. The native mode may also be less stable, due to the experimental state of GraalVM compiler.
-* `json-rpc` Mode: A single, JVM-based `signal-cli` instance is spawned as daemon process. This mode is usually the fastest, but requires more memory as the JVM keeps running.
-* `json-rpc-native` Mode: Uses the `signal-cli-native` binary and starts it in daemon mode (this mode basically combines the advantages of the `native` mode and the `json-rpc` mode). 
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string — enables message storage | unset |
+| `RECEIVE_WEBHOOK_URL` | Forward received messages to this HTTP endpoint | unset |
+| `PORT` | HTTP port | `8080` |
+| `LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error` | `info` |
+| `SWAGGER_HOST` | Host shown in Swagger UI | container IP:PORT |
+| `SWAGGER_IP` | IP shown in Swagger UI | container IP |
+| `SWAGGER_USE_HTTPS_AS_PREFERRED_SCHEME` | Use HTTPS in Swagger UI | `false` |
+| `DEFAULT_SIGNAL_TEXT_MODE` | Default text mode for send: `normal` or `styled` | `normal` |
+| `SIGNAL_CLI_CONFIG_DIR` | Path to signal-cli config inside container | `/home/.local/share/signal-cli` |
+| `SIGNAL_CLI_UID` | UID of the signal-api user | `1000` |
+| `SIGNAL_CLI_GID` | GID of the signal-api group | `1000` |
+| `SIGNAL_CLI_CHOWN_ON_STARTUP` | Chown config dir on startup | `true` |
+| `JSON_RPC_IGNORE_ATTACHMENTS` | Skip auto-downloading attachments | `false` |
+| `JSON_RPC_IGNORE_STORIES` | Skip auto-downloading stories | `false` |
+| `JSON_RPC_IGNORE_AVATARS` | Skip auto-downloading avatars | `false` |
+| `JSON_RPC_IGNORE_STICKERS` | Skip auto-downloading sticker packs | `false` |
+| `JSON_RPC_TRUST_NEW_IDENTITIES` | Identity trust policy: `on-first-use`, `always`, `never` | `on-first-use` |
 
-|       mode | speed                                                    | resident memory usage |
-| ---------: | :------------------------------------------------------- | :-------------------- |
-|   `normal` | :heavy_check_mark:                                       | normal                |
-|   `native` | :heavy_check_mark: :heavy_check_mark:                    | normal                |
-| `json-rpc` | :heavy_check_mark: :heavy_check_mark: :heavy_check_mark: | increased             |
-| `json-rpc-native` | :heavy_check_mark: :heavy_check_mark: :heavy_check_mark: :heavy_check_mark: | normal             |
-
-
-**Example of running `signal-cli-rest` in `native` mode**
-
-```bash
-$ sudo docker run -d --name signal-api --restart=always -p 9922:8080 \
-              -v /home/user/signal-api:/home/.local/share/signal-cli \
-              -e 'MODE=native' ghcr.io/strenkml/signal-cli-rest-api
-```
-
-This launches an instance of the REST service accessible under http://localhost:9922/v2/send. To preserve the Signal number registration, i.e. for updates, the storage location for the `signal-cli` configuration is mapped as Docker Volume into a local `/home/user/signal-api` directory.
-
-
-## Auto Receive Schedule
-
-> :warning: This setting is only needed in normal/native mode!
-
-[signal-cli](https://github.com/AsamK/signal-cli), which this REST API wrapper is based on, recommends to call `receive` on a regular basis. So, if you are not already calling the `receive` endpoint regularly, it is recommended to set the `AUTO_RECEIVE_SCHEDULE` parameter in the docker-compose.yml file. The `AUTO_RECEIVE_SCHEDULE` accepts cron schedule expressions and automatically calls the `receive` endpoint at the given time. e.g: `0 22 * * *` calls `receive` daily at 10pm. If you are not familiar with cron schedule expressions, you can use this [website](https://crontab.guru).
-
-**WARNING** Calling `receive` will fetch all the messages for the registered Signal number from the Signal Server! So, if you are using the REST API for receiving messages, it's _not_ a good idea to use the `AUTO_RECEIVE_SCHEDULE` parameter, as you might lose some messages that way.
-
-## Example
-
-Sample `docker-compose.yml`file:
-
-```yaml
-version: "3"
-services:
-  signal-cli-rest-api:
-    image: ghcr.io/strenkml/signal-cli-rest-api:latest
-    environment:
-      - MODE=normal #supported modes: json-rpc, native, normal
-      #- AUTO_RECEIVE_SCHEDULE=0 22 * * * #enable this parameter on demand (see description below)
-    ports:
-      - "8080:8080" #map docker port 8080 to host port 8080.
-    volumes:
-      - "./signal-cli-config:/home/.local/share/signal-cli" #map "signal-cli-config" folder on host system into docker container. the folder contains the password and cryptographic keys when a new number is registered
-```
-
-## Documentation & Usage
-
-### API Reference
-
-The Swagger API documentation can be found [here](https://bbernhard.github.io/signal-cli-rest-api/). If you prefer a simple text file based API documentation have a look [here](https://github.com/ghcr.io/strenkml/signal-cli-rest-api/blob/master/doc/EXAMPLES.md).
-
-### Blog Posts
-
-- [Running Signal Messenger REST API in Azure Web App for Containers](https://stefanstranger.github.io/2021/06/01/RunningSignalRESTAPIinAppService/) by [@stefanstranger](https://github.com/stefanstranger)
-- [Sending Signal Messages](https://blog.aawadia.dev/2023/04/24/signal-api/) by [@asad-awadia](https://github.com/asad-awadia)
-
-### Community Projects
-
-| Name                                                                     |  Type   |  Language  | Description                            |                     Maintainer                     |
-| ------------------------------------------------------------------------ | :-----: | :--------: | -------------------------------------- | :------------------------------------------------: |
-| [pysignalclirestapi](https://pypi.org/project/pysignalclirestapi/)       | Library |   Python   | Small python library                   |     [@bbernhard](https://github.com/bbernhard)     |
-| [signalbot](https://pypi.org/project/signalbot/)                         | Library |   Python   | Framework to build Signal bots         |       [@signalbot-org](https://github.com/orgs/signalbot-org/people)       |
-| [signal-cli-to-file](https://github.com/jneidel/signal-cli-to-file)      | Script  | JavaScript | Save incoming signal messages as files |       [@jneidel](https://github.com/jneidel)       |
-| [signal-rest-ts](https://www.npmjs.com/package/signal-rest-ts)           | Library | TypeScript | TypeScript module to build Signal bots | [@pseudogeneric](https://github.com/pseudogeneric) |
-| [secured-signal-api](https://github.com/codeshelldev/secured-signal-api) |  API Gateway  |     Go     | Secure Docker API Gateway with many QoL Features |  [@codeshelldev](https://github.com/codeshelldev)  |
-
-In case you need more functionality, please **file a ticket** or **create a PR**.
+---
 
 ## Plugins
 
-The plugin mechanism allows to register custom endpoints (with different payloads) without forking the project. Have a look [here](https://github.com/ghcr.io/strenkml/signal-cli-rest-api/tree/master/plugins) for details.
-
-## Advanced Settings
-There are a bunch of environmental variables that can be set inside the docker container in order to change some technical details. This settings are meant for developers and advanced users. Usually you do *not* need to change anything here - the default values are perfectly fine!
-
-* `SIGNAL_CLI_CONFIG_DIR`: Specifies the path to the `signal-cli` config directory inside the docker container. Defaults to `/home/.local/share/signal-cli/`
-
-* `SIGNAL_CLI_UID`: Specifies the uid of the `signal-api` user inside the docker container. Defaults to `1000`
-
-* `SIGNAL_CLI_GID`: Specifies the gid of the `signal-api` group inside the docker container. Defaults to `1000`
-
-* `SIGNAL_CLI_CHOWN_ON_STARTUP`: If set to `false` will skip the sometimes time consuming chown on startup. Defaults to `true`
-
-* `SWAGGER_HOST`: The host that's used in the Swagger UI for the interactive examples (and useful when this runs behind a reverse proxy). Defaults to SWAGGER_IP:PORT.
-
-* `SWAGGER_IP`: The IP that's used in the Swagger UI for the interactive examples. Defaults to the container ip.
-
-* `SWAGGER_USE_HTTPS_AS_PREFERRED_SCHEME`: Use the HTTPS Scheme as preferred scheme in the Swagger UI.
-
-* `PORT`: Defaults to port `8080` unless this env var is set to tell it otherwise.
-
-* `DEFAULT_SIGNAL_TEXT_MODE`: Allows to set the default text mode that should be used when sending a message (supported values: `normal`, `styled`). The setting is only used in case the `text_mode` is not explicitly set in the payload of the `send` method.
-
-* `LOG_LEVEL`: Allows to set the log level. Supported values: `debug`, `info`, `warn`, `error`. If nothing is specified, it defaults to `info`.
-
-* `JSON_RPC_IGNORE_ATTACHMENTS`: When set to `true`, attachments are not automatically downloaded in json-rpc mode (default: `false`)
-* `JSON_RPC_IGNORE_STORIES`: When set to `true`, stories are not automatically downloaded in json-rpc mode (default: `false`)
-* `JSON_RPC_IGNORE_AVATARS`: When set to `true`, avatars are not automatically downloaded in json-rpc mode (default: `false`)
-* `JSON_RPC_IGNORE_STICKERS`: When set to `true`, sticker packs are not automatically downloaded in json-rpc mode (default: `false`)
-* `JSON_RPC_TRUST_NEW_IDENTITIES`: Choose how to trust new identities in json-rpc mode. Supported values: `on-first-use`, `always`, `never`. (default: `on-first-use`)
+Custom endpoints can be registered without forking the project. Set `ENABLE_PLUGINS=true` and point `SIGNAL_CLI_REST_API_PLUGIN_SHARED_OBJ_DIR` at your plugin directory. See the [upstream plugin docs](https://github.com/bbernhard/signal-cli-rest-api/tree/master/plugins) for details.

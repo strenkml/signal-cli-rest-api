@@ -25,6 +25,7 @@ type QueryFilter struct {
 	StartTime     *int64
 	EndTime       *int64
 	EnvelopeTypes []string // defaults to ["dataMessage"] when empty
+	Retrieved     *bool    // nil = all, true = retrieved only, false = unread only
 	Limit         int      // default 100, hard cap 1000
 	Offset        int
 }
@@ -39,8 +40,9 @@ type StoredMessage struct {
 	MessageText  string          `json:"message_text"`
 	GroupID      string          `json:"group_id"`
 	EnvelopeType string          `json:"envelope_type"`
-	RawJSON      json.RawMessage `json:"raw_json"`
+	RawJSON      json.RawMessage `json:"raw_json" swaggertype:"object"`
 	ReceivedAt   time.Time       `json:"received_at"`
+	Retrieved    bool            `json:"retrieved"`
 }
 
 func (s *Store) SaveMessage(ctx context.Context, r MessageRecord) error {
@@ -92,11 +94,16 @@ func (s *Store) GetMessages(ctx context.Context, account string, f QueryFilter) 
 		args = append(args, *f.EndTime)
 		paramIdx++
 	}
+	if f.Retrieved != nil {
+		where += fmt.Sprintf(" AND retrieved = $%d", paramIdx)
+		args = append(args, *f.Retrieved)
+		paramIdx++
+	}
 
 	args = append(args, limit, f.Offset)
 	q := fmt.Sprintf(`
 		SELECT id, account, sender, sender_name, source_device, timestamp,
-		       message_text, group_id, envelope_type, raw_json, received_at
+		       message_text, group_id, envelope_type, raw_json, received_at, retrieved
 		FROM signal_messages
 		%s
 		ORDER BY timestamp ASC
@@ -115,11 +122,67 @@ func (s *Store) GetMessages(ctx context.Context, account string, f QueryFilter) 
 		if err := rows.Scan(
 			&m.ID, &m.Account, &m.Sender, &m.SenderName, &m.SourceDevice,
 			&m.Timestamp, &m.MessageText, &m.GroupID, &m.EnvelopeType,
-			&m.RawJSON, &m.ReceivedAt,
+			&m.RawJSON, &m.ReceivedAt, &m.Retrieved,
 		); err != nil {
 			return nil, err
 		}
 		messages = append(messages, m)
 	}
 	return messages, rows.Err()
+}
+
+// GetAndMarkRetrieved atomically fetches all unread messages for an account and
+// marks them as retrieved. Messages are never deleted — only the retrieved flag
+// is set. Returns the messages that were just marked.
+func (s *Store) GetAndMarkRetrieved(ctx context.Context, account string) ([]StoredMessage, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	const selectQ = `
+		SELECT id, account, sender, sender_name, source_device, timestamp,
+		       message_text, group_id, envelope_type, raw_json, received_at, retrieved
+		FROM signal_messages
+		WHERE account = $1 AND retrieved = FALSE
+		ORDER BY timestamp ASC`
+
+	rows, err := tx.Query(ctx, selectQ, account)
+	if err != nil {
+		return nil, err
+	}
+
+	var messages []StoredMessage
+	var ids []int64
+	for rows.Next() {
+		var m StoredMessage
+		if err := rows.Scan(
+			&m.ID, &m.Account, &m.Sender, &m.SenderName, &m.SourceDevice,
+			&m.Timestamp, &m.MessageText, &m.GroupID, &m.EnvelopeType,
+			&m.RawJSON, &m.ReceivedAt, &m.Retrieved,
+		); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		messages = append(messages, m)
+		ids = append(ids, m.ID)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(ids) > 0 {
+		const updateQ = `UPDATE signal_messages SET retrieved = TRUE WHERE id = ANY($1)`
+		if _, err := tx.Exec(ctx, updateQ, ids); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return messages, nil
 }
