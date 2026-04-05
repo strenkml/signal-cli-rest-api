@@ -27,8 +27,8 @@ RUN arch="$(uname -m)"; \
         x86_64) \
             wget -nv https://github.com/AsamK/signal-cli/releases/download/v${SIGNAL_CLI_VERSION}/signal-cli-${SIGNAL_CLI_VERSION}-Linux-native.tar.gz -O /tmp/signal-cli-native.tar.gz \
             && mkdir -p /tmp/signal-cli-native \
-            && tar xf /tmp/signal-cli-native.tar.gz -C /tmp/signal-cli-native --strip-components=1 \
-            && mv /tmp/signal-cli-native/bin/signal-cli /usr/bin/signal-cli-native ;; \
+            && tar xf /tmp/signal-cli-native.tar.gz -C /tmp/signal-cli-native \
+            && mv /tmp/signal-cli-native/signal-cli /usr/bin/signal-cli-native ;; \
         aarch64) \
             curl -fsSL https://packaging.gitlab.io/signal-cli/gpg.key | gpg -o /usr/share/keyrings/signal-cli-native.pgp --dearmor \
             && echo "deb [signed-by=/usr/share/keyrings/signal-cli-native.pgp] https://packaging.gitlab.io/signal-cli signalcli main" > /etc/apt/sources.list.d/morph027-signal-cli.list \
